@@ -42,7 +42,25 @@ struct LauncherView: View {
                 .transition(.scale(scale: 0.96, anchor: .bottomTrailing).combined(with: .opacity))
             }
         }
+        .overlay {
+            if model.isConfirmingClear {
+                // Dims the list; clicking outside the banner cancels.
+                Color.black.opacity(0.18)
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.cancelClearClipboard() }
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if model.isConfirmingClear {
+                ClearClipboardBanner(model: model)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 48)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .animation(.snappy(duration: 0.18), value: model.isActionPanelOpen)
+        .animation(.snappy(duration: 0.2), value: model.isConfirmingClear)
         .onChange(of: model.focusToken, initial: true) { searchFocused = true }
         .translationTask(model.translationConfiguration) { session in
             do {
@@ -167,6 +185,10 @@ struct LauncherView: View {
                 Text("Keystivo").font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
             Spacer()
+            if model.mode == .clipboard, !model.items.isEmpty {
+                footerButton(L("clipboard.clearHistory"), keys: ["⌘", "⇧", "⌫"]) { model.requestClearClipboard() }
+                Divider().frame(height: 14)
+            }
             if let item = model.selectedItem {
                 footerButton(item.primary.title, keys: ["↩"]) { model.performSelected() }
                 Divider().frame(height: 14)
@@ -193,6 +215,133 @@ struct LauncherView: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Row frames in window coordinates, so a right-click can select the row under the pointer.
+private struct RowFramesKey: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+// MARK: - Context menu & clipboard confirmation
+
+/// Right-click menu: every action of the row, with its shortcut.
+private struct RowContextMenu: View {
+    let item: LauncherItem
+    let model: LauncherModel
+
+    var body: some View {
+        let actions = [item.primary] + item.actions
+        let regular = actions.filter { !$0.isDestructive }
+        let destructive = actions.filter(\.isDestructive)
+        ForEach(regular) { action in button(action) }
+        if !destructive.isEmpty {
+            Divider()
+            ForEach(destructive) { action in button(action) }
+        }
+    }
+
+    private func button(_ action: LauncherAction) -> some View {
+        Button(role: action.isDestructive ? .destructive : nil) {
+            model.perform(action, of: item)
+        } label: {
+            Label(action.title, systemImage: action.symbol)
+        }
+        // The primary action runs on Return.
+        .modifier(ShortcutModifier(combo: action.id == item.primary.id ? KeyCombo(keyCode: KeyCodes.returnKey, modifiers: []) : action.shortcut))
+    }
+}
+
+/// Shows a launcher action's shortcut in menus.
+private struct ShortcutModifier: ViewModifier {
+    let combo: KeyCombo?
+
+    func body(content: Content) -> some View {
+        if let shortcut = combo?.menuShortcut {
+            content.keyboardShortcut(shortcut)
+        } else {
+            content
+        }
+    }
+}
+
+private extension KeyCombo {
+    /// The SwiftUI equivalent, for displaying the shortcut in menus.
+    var menuShortcut: KeyboardShortcut? {
+        let key: KeyEquivalent
+        switch keyCode {
+        case KeyCodes.returnKey: key = .return
+        case KeyCodes.delete: key = .delete
+        case KeyCodes.tab: key = .tab
+        case KeyCodes.space: key = .space
+        default:
+            guard let letter = KeyCodes.letterKeyCodes.first(where: { $0.value == keyCode })?.key else { return nil }
+            key = KeyEquivalent(letter)
+        }
+        var eventModifiers: EventModifiers = []
+        if modifiers.contains(.command) { eventModifiers.insert(.command) }
+        if modifiers.contains(.option) { eventModifiers.insert(.option) }
+        if modifiers.contains(.control) { eventModifiers.insert(.control) }
+        if modifiers.contains(.shift) { eventModifiers.insert(.shift) }
+        return KeyboardShortcut(key, modifiers: eventModifiers)
+    }
+}
+
+private struct ClearClipboardBanner: View {
+    let model: LauncherModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash.slash.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.red.gradient))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L("clipboard.clearConfirmTitle")).font(.callout.weight(.semibold))
+                Text(L("clipboard.clearConfirmBody")).font(.caption).foregroundStyle(.secondary)
+            }
+            .fixedSize()
+            Spacer(minLength: 12)
+            button(L("common.cancel"), key: "esc") { model.cancelClearClipboard() }
+            button(L("clipboardSettings.clearAll"), key: "⌘↩", tint: .red) { model.clearClipboard(keepPinned: false) }
+            button(L("clipboardSettings.clearKeepPinned"), key: "↩", prominent: true) { model.clearClipboard(keepPinned: true) }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            shape.fill(Color(nsColor: .windowBackgroundColor))
+            shape.fill(Color.red.opacity(0.05))
+            shape.strokeBorder(Color.red.opacity(0.3), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
+    }
+
+    private func button(_ title: String, key: String, tint: Color? = nil, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title)
+                Text(key)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .opacity(0.7)
+            }
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .foregroundStyle(prominent ? Color.white : (tint ?? Color.primary))
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(prominent ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle((tint ?? Color.primary).opacity(0.1)))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
     }
 }
 
@@ -225,15 +374,29 @@ private struct ResultsList: View {
                                     model.performSelected()
                                 }
                                 .onTapGesture { model.selectedIndex = index }
+                                .background {
+                                    GeometryReader { geometry in
+                                        Color.clear.preference(key: RowFramesKey.self, value: [index: geometry.frame(in: .global)])
+                                    }
+                                }
+                                .contextMenu { RowContextMenu(item: item, model: model) }
                         }
                     }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
                 .animation(.spring(response: 0.26, dampingFraction: 0.86), value: model.selectedIndex)
-                .animation(.easeOut(duration: 0.15), value: model.items.map(\.id))
+                .animation(.snappy(duration: 0.24), value: model.items.map(\.id))
             }
             .scrollIndicators(.never)
+            .onPreferenceChange(RowFramesKey.self) { model.rowFrames = $0 }
+            .background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { model.listFrame = geometry.frame(in: .global) }
+                        .onChange(of: geometry.frame(in: .global)) { _, frame in model.listFrame = frame }
+                }
+            }
             .onChange(of: model.selectedIndex) { _, index in
                 guard model.items.indices.contains(index) else { return }
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(model.items[index].id) }
@@ -292,7 +455,7 @@ private struct ResultRow: View {
             }
         }
         .onHover { hovering = $0 }
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity.combined(with: .scale(scale: 0.96))))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

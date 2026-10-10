@@ -23,3 +23,20 @@ struct ToolsTests {
         #expect(SystemMonitor.rate(2048).contains("/s"))
     }
 }
+
+@Suite("Menu bar rates")
+struct CompactRateTests {
+    @Test func neverMoreThanThreeDigits() {
+        #expect(SystemMonitor.compactRate(510) == "510 B")
+        #expect(SystemMonitor.compactRate(1021) == "1.0 K")
+        #expect(SystemMonitor.compactRate(12_800) == "12 K")
+        #expect(SystemMonitor.compactRate(1_023_000) == "999 K")
+        #expect(SystemMonitor.compactRate(1_048_000) == "1.0 M")
+        #expect(SystemMonitor.compactRate(4_200_000) == "4.0 M")
+        #expect(SystemMonitor.compactRate(-5) == "0 B")
+        for value in stride(from: 0.0, through: 5e9, by: 7_777_777.0) {
+            let digits = SystemMonitor.compactRate(value).filter(\.isNumber).count
+            #expect(digits <= 3, "\(value)")
+        }
+    }
+}

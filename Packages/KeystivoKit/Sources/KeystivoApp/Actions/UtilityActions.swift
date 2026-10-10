@@ -9,6 +9,7 @@ import KeystivoInput
 import KeystivoLinks
 import KeystivoNavigation
 import KeystivoPlugins
+import KeystivoScreenSaver
 import KeystivoSearch
 import KeystivoSystem
 import KeystivoTools
@@ -99,6 +100,17 @@ extension BuiltinActions {
         }
         register("display.brightnessDown", "sun.min.fill", .system, keywords: ["brightness", "darker", "ddc", "external monitor"]) { _, _ in
             BrightnessController.shared.adjust(by: -1.0 / 16)
+        }
+
+        // Screen savers
+        register("screensaver.start", "sparkles.tv", .system, keywords: ["screen saver", "screensaver", "clock", "idle", "ekran koruyucu"]) { _, _ in
+            ScreenSaverManager.startSystemScreenSaver()
+        }
+        register("screensaver.preview", "play.rectangle", .system, parameters: [
+            ParameterSpec("style", "param.style", .choice(choice(SaverStyle.self) { $0.titleKey }), default: .string(SaverStyle.shuffle.rawValue)),
+        ], keywords: ["screen saver", "clock", "flip clock", "aurora", "preview"]) { arguments, _ in
+            let style = arguments.string("style").flatMap(SaverStyle.init(rawValue:)) ?? .shuffle
+            runtime.screenSavers.showPreview(style)
         }
 
         // Battery (AlDente)

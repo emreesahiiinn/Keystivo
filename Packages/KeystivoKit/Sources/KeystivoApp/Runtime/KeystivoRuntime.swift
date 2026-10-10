@@ -9,12 +9,14 @@ import KeystivoInput
 import KeystivoLinks
 import KeystivoNavigation
 import KeystivoPlugins
+import KeystivoScreenSaver
 import KeystivoSearch
 import KeystivoSystem
 import KeystivoTools
 import KeystivoWindows
 import Observation
 import ServiceManagement
+import SwiftUI
 
 /// Composition root: owns the configuration and wires every module together.
 ///
@@ -48,10 +50,12 @@ public final class KeystivoRuntime {
     @ObservationIgnored private(set) lazy var presentation = PresentationOverlay()
     @ObservationIgnored private(set) lazy var annotationEditor = AnnotationEditorPresenter(runtime: self)
     @ObservationIgnored private(set) lazy var recording = RecordingController(runtime: self)
+    @ObservationIgnored private(set) lazy var screenSavers = ScreenSaverManager()
     let chargeLimiter = ChargeLimiter()
     @ObservationIgnored private var appliedKeyRemaps = false
     @ObservationIgnored private let systemEvents = SystemEventSource()
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var debugWindows: [NSWindow] = []
     @ObservationIgnored private var applyingFromServices = false
 
     /// Shorthand for views and services; writes persist automatically.
@@ -139,6 +143,30 @@ public final class KeystivoRuntime {
         if let path = UserDefaults.standard.string(forKey: "KSAnnotateImage"), let image = NSImage(contentsOfFile: path) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.annotationEditor.open(image) }
         }
+        // `-KSShowClipboard YES` (add `-KSConfirmClear YES` for the clear banner).
+        if UserDefaults.standard.bool(forKey: "KSShowClipboard") {
+            // Sample rows, no real pasting or deleting.
+            launcher.model.isInertForTesting = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.launcher.show(mode: .clipboard)
+                if UserDefaults.standard.bool(forKey: "KSConfirmClear") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self?.launcher.model.requestClearClipboard() }
+                }
+                // `-KSTestRemoveRow N`: removes a row from the list only (animation checks; the store is untouched).
+                if let row = UserDefaults.standard.object(forKey: "KSTestRemoveRow") as? String, let index = Int(row) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        guard let model = self?.launcher.model else { return }
+                        model.selectedIndex = index
+                        let id = model.selectedItem?.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.removeItems { $0.id == id } }
+                    }
+                }
+                // `-KSRightClickRow N`: opens the context menu of a row.
+                if let row = UserDefaults.standard.object(forKey: "KSRightClickRow") as? String, let index = Int(row) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.launcher.debugRightClickRow(index) }
+                }
+            }
+        }
         if UserDefaults.standard.bool(forKey: "KSShowSwitcher") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 Task { await self?.switcher.toggle(scope: .all, holdModifiers: []) }
@@ -163,6 +191,32 @@ public final class KeystivoRuntime {
                     }
                 }
             }
+        }
+        if UserDefaults.standard.bool(forKey: "KSOpenScreenSaverSettings") { ScreenSaverManager.openSystemSettings() }
+        if let raw = UserDefaults.standard.string(forKey: "KSUseSaver"), let style = SaverStyle(rawValue: raw) {
+            Task { [weak self] in
+                let selected = await self?.screenSavers.use(style) ?? false
+                Log.logger("Debug").notice("use saver \(raw, privacy: .public): \(selected)")
+            }
+        }
+        if let bundleID = UserDefaults.standard.string(forKey: "KSDumpAX") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { DebugCapture.dumpAccessibility(of: bundleID) }
+        }
+        // `-KSCaptureApp <bundle id> -KSCaptureOutput /path.png`: screenshot of another app's front window.
+        if let bundleID = UserDefaults.standard.string(forKey: "KSCaptureApp"), let output = UserDefaults.standard.string(forKey: "KSCaptureOutput") {
+            Task {
+                let delay = UserDefaults.standard.double(forKey: "KSCaptureDelay")
+                try? await Task.sleep(for: .seconds(delay > 0 ? delay : 2))
+                await DebugCapture.captureFrontWindow(of: bundleID, to: URL(fileURLWithPath: output))
+            }
+        }
+        // `-KSLiveSaverWindow <style>`: a small live screen saver window (visual checks).
+        if let raw = UserDefaults.standard.string(forKey: "KSLiveSaverWindow"), let style = SaverStyle(rawValue: raw) {
+            let window = NSWindow(contentRect: CGRect(x: 40, y: 40, width: 960, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+            window.title = "Saver Test"
+            window.contentView = NSHostingView(rootView: SaverRootView(style: style))
+            window.orderFrontRegardless()
+            debugWindows.append(window)
         }
         // `-KSShowMonitorPopover cpu|memory|network|disk`
         if let raw = UserDefaults.standard.string(forKey: "KSShowMonitorPopover"), let metric = MonitorMetric(rawValue: raw) {

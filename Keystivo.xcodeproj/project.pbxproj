@@ -48,6 +48,29 @@
 		};
 /* End PBXCopyFilesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		KS0000000000000000000606 /* Build Screen Savers */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Screen Savers";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"$SRCROOT/Scripts/build-savers.sh\" \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Library/Screen Savers\" \"$EXPANDED_CODE_SIGN_IDENTITY\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXFileReference section */
 		KS0000000000000000000201 /* Keystivo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keystivo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		KS0000000000000000000202 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
@@ -152,6 +175,7 @@
 				KS0000000000000000000603 /* Resources */,
 				KS0000000000000000000604 /* Embed Helper */,
 				KS0000000000000000000605 /* Embed Launch Daemon */,
+				KS0000000000000000000606 /* Build Screen Savers */,
 			);
 			buildRules = (
 			);

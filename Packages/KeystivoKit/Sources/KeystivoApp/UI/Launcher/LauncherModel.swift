@@ -34,6 +34,17 @@ final class LauncherModel {
     var isActionPanelOpen = false
     var actionIndex = 0
     private(set) var pendingConfirmationID: String?
+    /// Result row frames and the list's visible frame, in window coordinates
+    /// (top-left origin); a right-click selects the row under the pointer.
+    @ObservationIgnored var rowFrames: [Int: CGRect] = [:]
+    @ObservationIgnored var listFrame: CGRect = .zero
+    #if DEBUG
+    /// Automated visual checks: sample clipboard rows, and actions do nothing
+    /// (the panel takes keyboard focus, so a stray Return must not paste or delete).
+    @ObservationIgnored var isInertForTesting = false
+    #endif
+    /// Clipboard mode: asking whether to clear the whole history.
+    private(set) var isConfirmingClear = false
     private(set) var isLoading = false
     private(set) var pluginText: String?
     /// Source text for the text-actions mode (selected text or clipboard).
@@ -48,6 +59,8 @@ final class LauncherModel {
     @ObservationIgnored var onDismiss: (() -> Void)?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var asyncItems: [LauncherItem] = []
+    /// Mode whose results are on screen (async-only lists keep them while reloading).
+    @ObservationIgnored private var displayedMode: LauncherMode?
     @ObservationIgnored var windowCache: [WindowInfo] = []
     @ObservationIgnored private var pluginItems: [LauncherItem] = []
     @ObservationIgnored private var toastTask: Task<Void, Never>?
@@ -67,6 +80,7 @@ final class LauncherModel {
         self.mode = mode
         isActionPanelOpen = false
         pendingConfirmationID = nil
+        isConfirmingClear = false
         pluginText = nil
         focusToken += 1
         if mode == .root || mode == .windows {
@@ -80,7 +94,8 @@ final class LauncherModel {
         if mode == .textActions { textInput = Self.selectedTextOrClipboard() }
         AppCatalog.shared.refreshIfNeeded()
         PluginManager.shared.reload()
-        refresh()
+        selectedIndex = 0
+        reload(keepingSelection: false)
     }
 
     func showPluginOutput(_ output: PluginOutput, title: String) {
@@ -104,39 +119,60 @@ final class LauncherModel {
 
     private func queryChanged() {
         selectedIndex = 0
-        refresh()
+        reload(keepingSelection: false)
     }
 
     // MARK: Searching
 
+    /// Re-runs the current search in place: the rows stay on screen until fresh
+    /// results arrive and the selected item stays selected.
     func refresh() {
+        reload(keepingSelection: true)
+    }
+
+    private func reload(keepingSelection: Bool) {
         searchTask?.cancel()
         let text = query.trimmingCharacters(in: .whitespaces)
         var results = synchronousItems(for: text)
-        apply(results)
-
         let needsAsync: Bool = switch mode {
         case .root: text.count >= 3 && runtime.config.launcher.searchesFiles
         case .clipboard, .files: true
         default: false
         }
-        guard needsAsync else { asyncItems = []; return }
-        isLoading = true
+        // Lists that only have async results (clipboard, files) keep their rows
+        // until the new ones arrive, instead of flashing empty.
+        let keepsRows = needsAsync && results.isEmpty && displayedMode == mode && !items.isEmpty
+        if !keepsRows {
+            apply(results, selecting: keepingSelection ? selectedItem?.id : nil)
+        }
+        guard needsAsync else {
+            asyncItems = []
+            isLoading = false
+            return
+        }
         searchTask = Task {
             // Debounce typing bursts before hitting Spotlight/SQLite.
             try? await Task.sleep(for: .milliseconds(mode == .clipboard ? 40 : 180))
             guard !Task.isCancelled else { return }
+            // Only slow searches show the spinner.
+            let spinner = Task {
+                try? await Task.sleep(for: .milliseconds(150))
+                if !Task.isCancelled { isLoading = true }
+            }
             let extra = await asynchronousItems(for: text)
+            spinner.cancel()
             guard !Task.isCancelled else { return }
             asyncItems = extra
             results.append(contentsOf: extra)
-            apply(results)
+            // Rows already on screen for this query: keep what the user selected meanwhile.
+            apply(results, selecting: keepingSelection || !keepsRows ? selectedItem?.id : nil)
             isLoading = false
         }
     }
 
-    private func apply(_ results: [LauncherItem]) {
-        let previousID = selectedItem?.id
+    /// Shows `results`; `anchor` is the item to keep selected when still present.
+    private func apply(_ results: [LauncherItem], selecting anchor: String?) {
+        displayedMode = mode
         var grouped: [LauncherSection: [LauncherItem]] = [:]
         for item in results { grouped[item.section, default: []].append(item) }
         var groups: [LauncherSectionGroup] = []
@@ -165,11 +201,33 @@ final class LauncherModel {
         }
         sections = groups
         items = groups.flatMap(\.items)
-        if let previousID, let index = items.firstIndex(where: { $0.id == previousID }), !query.isEmpty {
+        if let anchor, let index = items.firstIndex(where: { $0.id == anchor }) {
             selectedIndex = index
         } else if selectedIndex >= items.count {
             selectedIndex = max(items.count - 1, 0)
         }
+    }
+
+    /// Removes rows right away, without waiting for a reload. The selection
+    /// stays on the same slot, so it moves to the next row (like Mail).
+    func removeItems(where shouldRemove: (LauncherItem) -> Bool) {
+        let selectedID = selectedItem?.id
+        let removed = Set(items.filter(shouldRemove).map(\.id))
+        guard !removed.isEmpty else { return }
+        let removedAbove = items.prefix(selectedIndex).filter { removed.contains($0.id) }.count
+        withAnimation(.snappy(duration: 0.24)) {
+            sections = sections.compactMap { group in
+                let remaining = group.items.filter { !removed.contains($0.id) }
+                return remaining.isEmpty ? nil : LauncherSectionGroup(section: group.section, items: remaining)
+            }
+            items = sections.flatMap(\.items)
+            if let selectedID, !removed.contains(selectedID), let index = items.firstIndex(where: { $0.id == selectedID }) {
+                selectedIndex = index
+            } else {
+                selectedIndex = min(max(selectedIndex - removedAbove, 0), max(items.count - 1, 0))
+            }
+        }
+        asyncItems.removeAll { removed.contains($0.id) }
     }
 
     // MARK: Navigation
@@ -224,6 +282,9 @@ final class LauncherModel {
     }
 
     func perform(_ action: LauncherAction, of item: LauncherItem) {
+        #if DEBUG
+        if isInertForTesting { return }
+        #endif
         if let key = item.usageKey { runtime.recordUsage(key) }
         isActionPanelOpen = false
         pendingConfirmationID = nil
@@ -236,6 +297,41 @@ final class LauncherModel {
         guard let item = selectedItem, let action = item.allActions.first(where: { $0.shortcut == combo }) else { return false }
         perform(action, of: item)
         return true
+    }
+
+    /// The result row at `point` (window coordinates, top-left origin).
+    func rowIndex(at point: CGPoint) -> Int? {
+        guard listFrame.contains(point) else { return nil }
+        return rowFrames.first { items.indices.contains($0.key) && $0.value.contains(point) }?.key
+    }
+
+    // MARK: Clipboard history
+
+    /// Asks (inside the launcher) whether to clear the clipboard history.
+    func requestClearClipboard() {
+        guard mode == .clipboard else { return }
+        isActionPanelOpen = false
+        isConfirmingClear = true
+    }
+
+    func cancelClearClipboard() {
+        isConfirmingClear = false
+    }
+
+    func clearClipboard(keepPinned: Bool) {
+        isConfirmingClear = false
+        #if DEBUG
+        if isInertForTesting { return }
+        #endif
+        removeItems { item in
+            guard case .clipboard(let entry)? = item.preview else { return false }
+            return !(keepPinned && entry.isPinned)
+        }
+        showToast(L(keepPinned ? "clipboard.clearedKeepPinned" : "clipboard.cleared"))
+        Task {
+            await ClipboardMonitor.shared.clearHistory(keepPinned: keepPinned)
+            refresh()
+        }
     }
 
     func showToast(_ text: String) {

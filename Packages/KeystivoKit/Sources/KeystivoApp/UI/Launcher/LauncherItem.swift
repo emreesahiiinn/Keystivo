@@ -140,4 +140,5 @@ extension KeyCombo {
         KeyCombo(keyCode: KeyCodes.letterKeyCodes[letter] ?? 0, modifiers: shift ? [.command, .shift] : .command)
     }
     static let commandDelete = KeyCombo(keyCode: KeyCodes.delete, modifiers: .command)
+    static let commandShiftDelete = KeyCombo(keyCode: KeyCodes.delete, modifiers: [.command, .shift])
 }

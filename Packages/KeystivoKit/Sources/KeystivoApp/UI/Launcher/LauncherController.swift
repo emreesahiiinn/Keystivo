@@ -79,9 +79,22 @@ final class LauncherController {
 
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .rightMouseDown, .leftMouseDown]) { [weak self] event in
             guard let self, let panel = self.panel, event.window === panel else { return event }
-            return self.handle(event) ? nil : event
+            switch event.type {
+            case .keyDown:
+                return self.handle(event) ? nil : event
+            case .rightMouseDown, .leftMouseDown where event.modifierFlags.contains(.control):
+                // A secondary click selects the row under the pointer before its menu opens.
+                if let content = panel.contentView {
+                    let location = content.convert(event.locationInWindow, from: nil)
+                    let point = CGPoint(x: location.x, y: content.isFlipped ? location.y : content.bounds.height - location.y)
+                    if let index = self.model.rowIndex(at: point) { self.model.selectedIndex = index }
+                }
+                return event
+            default:
+                return event
+            }
         }
     }
 
@@ -96,6 +109,15 @@ final class LauncherController {
         if let textView = panel?.firstResponder as? NSTextView, textView.hasMarkedText() { return false }
         let modifiers = KeyModifiers(event.modifierFlags).subtracting(.function)
         let code = event.keyCode
+        if model.isConfirmingClear {
+            switch (code, modifiers) {
+            case (KeyCodes.escape, []): model.cancelClearClipboard()
+            case (KeyCodes.returnKey, []), (KeyCodes.keypadEnter, []): model.clearClipboard(keepPinned: true)
+            case (KeyCodes.returnKey, [.command]): model.clearClipboard(keepPinned: false)
+            default: break
+            }
+            return true
+        }
         switch (code, modifiers) {
         case (KeyCodes.downArrow, []), (UInt16(45), [.control]): // ⌃N
             model.moveSelection(1); return true
@@ -137,4 +159,15 @@ final class LauncherController {
         }
         return false
     }
+
+    #if DEBUG
+    /// Debug: right-clicks result row `index`, to check the context menu visually.
+    func debugRightClickRow(_ index: Int) {
+        guard let frame = panel?.frame, let screenHeight = NSScreen.screens.first?.frame.height else { return }
+        let point = CGPoint(x: frame.minX + 160, y: screenHeight - frame.maxY + 85 + CGFloat(index) * 43)
+        for type in [CGEventType.rightMouseDown, .rightMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .right)?.post(tap: .cghidEventTap)
+        }
+    }
+    #endif
 }

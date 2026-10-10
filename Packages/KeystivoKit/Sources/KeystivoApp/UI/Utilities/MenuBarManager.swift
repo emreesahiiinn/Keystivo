@@ -245,12 +245,13 @@ private struct MonitorSegmentView: View {
         case .memory: compact("memorychip", "\(Int(snapshot.memoryPressure * 100))%", width: 27)
         case .network:
             VStack(alignment: .trailing, spacing: -1) {
-                Text("↑ " + Self.short(snapshot.networkUp))
-                Text("↓ " + Self.short(snapshot.networkDown))
+                Text("↑ " + SystemMonitor.compactRate(snapshot.networkUp)).lineLimit(1)
+                Text("↓ " + SystemMonitor.compactRate(snapshot.networkDown)).lineLimit(1)
             }
             .font(.system(size: 8.5, weight: .medium).monospacedDigit())
-            // Fixed width keeps the item from jittering as values change.
-            .frame(width: 39, alignment: .trailing)
+            .fixedSize()
+            // Wide enough for the widest possible value, so it never wraps or jitters.
+            .frame(width: Self.networkWidth, alignment: .trailing)
         case .disk: compact("internaldrive", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file), width: nil)
         }
     }
@@ -264,13 +265,11 @@ private struct MonitorSegmentView: View {
         }
     }
 
-    static func short(_ bytes: Double) -> String {
-        switch bytes {
-        case ..<1024: return "\(Int(bytes)) B"
-        case ..<1_048_576: return "\(Int(bytes / 1024)) K"
-        default: return String(format: "%.1f M", bytes / 1_048_576)
-        }
-    }
+    static let networkWidth: CGFloat = {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .medium)
+        let widest = ["↓ 999 B", "↓ 999 K", "↓ 9.9 M", "↓ 999 M", "↓ 9.9 G"].map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 40
+        return ceil(widest) + 1
+    }()
 }
 
 /// The popover of one menu bar metric.

@@ -250,6 +250,20 @@ public final class SystemMonitor {
         return (down, up)
     }
 
+    /// Menu bar rate: never more than three digits, so its width is stable.
+    /// "512 B", "1.0 K", "12 K", "999 K", "1.2 M", "15 M", "1.1 G".
+    nonisolated public static func compactRate(_ bytesPerSecond: Double) -> String {
+        let units = ["B", "K", "M", "G", "T"]
+        var value = max(0, bytesPerSecond.isFinite ? bytesPerSecond : 0)
+        var index = 0
+        while value >= 999.5, index < units.count - 1 {
+            value /= 1024
+            index += 1
+        }
+        let number = index > 0 && value < 9.95 ? String(format: "%.1f", value) : String(format: "%.0f", value)
+        return "\(number) \(units[index])"
+    }
+
     /// "1.2 MB/s" style formatting.
     nonisolated public static func rate(_ bytesPerSecond: Double) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .binary) + "/s"

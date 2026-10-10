@@ -60,6 +60,15 @@ extension LauncherModel {
             let files = await FileSearch.shared.search(text.isEmpty ? "" : text, limit: 40)
             return files.enumerated().map { index, file in fileItem(file, section: .results, score: Double(1000 - index)) }
         case .clipboard:
+            #if DEBUG
+            if isInertForTesting {
+                return (1...10).map { index in
+                    clipboardItem(ClipboardItem(id: Int64(index), kind: .text, text: "Sample clipboard text \(index)",
+                                                sourceBundleID: "com.apple.Safari", createdAt: .now - Double(index) * 600,
+                                                lastUsedAt: .now - Double(index - 1) * 600))
+                }
+            }
+            #endif
             let entries = await ClipboardMonitor.shared.items(matching: text, limit: 300)
             return entries.map(clipboardItem)
         default:
@@ -398,7 +407,9 @@ extension LauncherModel {
         let source = entry.sourceBundleID.flatMap(AppDisplayName.name(forBundleID:))
         let relative = RelativeDateTimeFormatter()
         relative.locale = Localizer.shared.locale
-        let subtitle = [source, relative.localizedString(for: entry.lastUsedAt, relativeTo: .now)].compactMap { $0 }.joined(separator: " · ")
+        relative.dateTimeStyle = .named  // "now" rather than "in 0 seconds"
+        let now = Date.now
+        let subtitle = [source, relative.localizedString(for: min(entry.lastUsedAt, now), relativeTo: now)].compactMap { $0 }.joined(separator: " · ")
         let pastes = runtime.config.clipboard.pastesDirectly
         return LauncherItem(
             id: "clip:\(entry.id)", title: entry.preview.isEmpty ? L("clipboard.kind.\(entry.kind.rawValue)") : entry.preview,
@@ -417,8 +428,13 @@ extension LauncherModel {
                     self?.refresh()
                 },
                 LauncherAction(title: L("launcher.action.delete"), symbol: "trash", shortcut: .commandDelete, dismisses: false, isDestructive: true) { [weak self] in
+                    // The row goes away at once; the store follows.
+                    self?.removeItems { $0.id == "clip:\(entry.id)" }
+                    self?.showToast(L("clipboard.deleted"))
                     await monitor.delete(entry)
-                    self?.refresh()
+                },
+                LauncherAction(title: L("clipboard.clearHistory"), symbol: "trash.slash", shortcut: .commandShiftDelete, dismisses: false, isDestructive: true) { [weak self] in
+                    self?.requestClearClipboard()
                 },
             ],
             preview: .clipboard(entry)

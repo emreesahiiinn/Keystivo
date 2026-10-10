@@ -57,6 +57,8 @@ let package = Package(
         module("KeystivoTools", dependencies: ["KeystivoCore"]),
         module("KeystivoFiles", dependencies: ["KeystivoCore"]),
         module("KeystivoLinks", dependencies: ["KeystivoCore"]),
+        // Self-contained: also compiled into the standalone .saver bundles.
+        module("KeystivoScreenSaver"),
 
         // MARK: Privileged helper support (no main-actor default: runs on XPC queues)
         .target(name: "CSMC", path: "Sources/CSMC", linkerSettings: [.linkedFramework("IOKit")]),
@@ -71,7 +73,7 @@ let package = Package(
             "KeystivoCore", "KeystivoAccessibility", "KeystivoWindows", "KeystivoNavigation",
             "KeystivoAudio", "KeystivoClipboard", "KeystivoSearch", "KeystivoInput",
             "KeystivoAutomation", "KeystivoSystem", "KeystivoPlugins",
-            "KeystivoTools", "KeystivoFiles", "KeystivoLinks", "KeystivoHelperCore",
+            "KeystivoTools", "KeystivoFiles", "KeystivoLinks", "KeystivoHelperCore", "KeystivoScreenSaver",
         ]),
 
         // MARK: Tests
@@ -88,6 +90,7 @@ let package = Package(
         tests("KeystivoToolsTests", dependencies: ["KeystivoTools"]),
         tests("KeystivoFilesTests", dependencies: ["KeystivoFiles"]),
         tests("KeystivoLinksTests", dependencies: ["KeystivoLinks"]),
+        tests("KeystivoScreenSaverTests", dependencies: ["KeystivoScreenSaver"]),
         .testTarget(name: "KeystivoHelperCoreTests", dependencies: ["KeystivoHelperCore"]),
     ]
 )

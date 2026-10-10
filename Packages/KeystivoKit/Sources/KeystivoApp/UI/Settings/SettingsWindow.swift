@@ -21,7 +21,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case launcher, clipboard, snippets, automation, plugins
     case switcher, windows, dock, workspaces
     case navigation, gestures, mouseKeyboard, audio, system
-    case menuBar, screenTools, displays, battery, files, links, presentation
+    case menuBar, screenTools, displays, screenSavers, battery, files, links, presentation
     case diagnostics, backup, about
 
     var id: String { rawValue }
@@ -49,6 +49,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .menuBar: "menubar.rectangle"
         case .screenTools: "viewfinder"
         case .displays: "sun.max.fill"
+        case .screenSavers: "sparkles.tv"
         case .battery: "battery.100percent.bolt"
         case .files: "folder.fill.badge.gearshape"
         case .links: "link.circle.fill"
@@ -80,6 +81,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .menuBar: .indigo
         case .screenTools: .orange
         case .displays: .yellow
+        case .screenSavers: .purple
         case .battery: .green
         case .files: .blue
         case .links: .teal
@@ -94,7 +96,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         ("settings.group.productivity", [.launcher, .clipboard, .snippets, .automation, .plugins]),
         ("settings.group.windows", [.switcher, .windows, .dock, .workspaces]),
         ("settings.group.input", [.navigation, .gestures, .mouseKeyboard, .audio, .system]),
-        ("settings.group.utilities", [.menuBar, .screenTools, .displays, .battery, .files, .links, .presentation]),
+        ("settings.group.utilities", [.menuBar, .screenTools, .displays, .screenSavers, .battery, .files, .links, .presentation]),
         ("settings.group.support", [.diagnostics, .backup, .about]),
     ]
 }
@@ -252,6 +254,7 @@ struct SettingsRootView: View {
         case .menuBar: MenuBarPage(runtime: runtime)
         case .screenTools: ScreenToolsPage(runtime: runtime)
         case .displays: DisplaysPage(runtime: runtime)
+        case .screenSavers: ScreenSaversPage(runtime: runtime)
         case .battery: BatteryPage(runtime: runtime)
         case .files: FilesPage(runtime: runtime)
         case .links: LinksPage(runtime: runtime)
