@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "com.keystivo.examples",
+  "name": "Keystivo Examples",
+  "version": "1.0.0",
+  "author": "Keystivo",
+  "description": "Sample commands that show the three plugin output modes. Copy this folder to start your own plugin.",
+  "icon": "puzzlepiece.extension",
+  "commands": [
+    {
+      "id": "system-info",
+      "title": "System Information",
+      "subtitle": "macOS version, uptime and disk usage",
+      "icon": "info.circle",
+      "keywords": ["about", "version", "uptime"],
+      "mode": "text",
+      "script": "system-info.sh"
+    },
+    {
+      "id": "uuid",
+      "title": "Generate UUIDs",
+      "subtitle": "Pick one to copy it",
+      "icon": "number",
+      "keywords": ["guid", "random", "id"],
+      "mode": "list",
+      "script": "uuid.sh"
+    },
+    {
+      "id": "hello",
+      "title": "Say Hello",
+      "subtitle": "Type a name after the command",
+      "icon": "hand.wave",
+      "mode": "silent",
+      "script": "hello.sh",
+      "acceptsQuery": true
+    }
+  ],
+  "localizations": {
+    "tr": {
+      "name": "Keystivo Örnekleri",
+      "commands": {
+        "system-info": { "title": "Sistem Bilgisi", "subtitle": "macOS sürümü, çalışma süresi ve disk kullanımı" },
+        "uuid": { "title": "UUID Üret", "subtitle": "Kopyalamak için birini seçin" },
+        "hello": { "title": "Merhaba De", "subtitle": "Komuttan sonra bir isim yazın" }
+      }
+    },
+    "de": {
+      "name": "Keystivo-Beispiele",
+      "commands": {
+        "system-info": { "title": "Systeminformationen" },
+        "uuid": { "title": "UUIDs erzeugen" },
+        "hello": { "title": "Hallo sagen" }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+// Shared build settings for the Keystivo app target.
+// Put machine-specific settings (signing team) in Local.xcconfig (git-ignored).
+
+PRODUCT_NAME = Keystivo
+PRODUCT_BUNDLE_IDENTIFIER = com.keystivo.Keystivo
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+MACOSX_DEPLOYMENT_TARGET = 15.0
+SDKROOT = macosx
+SWIFT_VERSION = 6.0
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_APPROACHABLE_CONCURRENCY = YES
+
+INFOPLIST_FILE = Config/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+CODE_SIGN_ENTITLEMENTS = Config/Keystivo.entitlements
+ENABLE_HARDENED_RUNTIME = YES
+ENABLE_APP_SANDBOX = NO
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+SWIFT_EMIT_LOC_STRINGS = YES
+
+// Ad-hoc signing by default. Set DEVELOPMENT_TEAM in Local.xcconfig so macOS keeps
+// Accessibility/Screen Recording permissions across rebuilds.
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+// Ad-hoc signatures normally identify the app by its code hash, which changes on
+// every build, so macOS forgets Accessibility/Screen Recording grants after each
+// rebuild. For local ad-hoc builds we declare a designated requirement based on
+// the bundle identifier instead, keeping privacy grants stable across rebuilds.
+// Local.xcconfig clears this when a real signing identity is configured.
+KEYSTIVO_ADHOC_REQUIREMENT = --requirements "=designated => identifier \"$(PRODUCT_BUNDLE_IDENTIFIER)\""
+OTHER_CODE_SIGN_FLAGS = $(inherited) $(KEYSTIVO_ADHOC_REQUIREMENT)
+
+#include? "Local.xcconfig"
+
+// The app target has no SwiftUI previews; a single signed executable keeps the
+// code signature (and therefore privacy permissions) simple and verifiable.
+ENABLE_DEBUG_DYLIB = NO

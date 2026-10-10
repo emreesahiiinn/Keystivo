@@ -1,0 +1,8 @@
+// Copy to Config/Local.xcconfig (ignored by git) and fill in your team ID.
+// A stable signing identity keeps macOS privacy permissions (Accessibility,
+// Screen Recording) valid across rebuilds; ad-hoc builds must be re-approved.
+DEVELOPMENT_TEAM = ABCDE12345
+CODE_SIGN_IDENTITY = Apple Development
+
+// A real identity has a stable designated requirement; drop the ad-hoc override.
+KEYSTIVO_ADHOC_REQUIREMENT =

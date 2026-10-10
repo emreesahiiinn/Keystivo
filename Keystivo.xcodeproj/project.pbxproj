@@ -1,0 +1,414 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		KS0000000000000000000101 /* KeystivoKit in Frameworks */ = {isa = PBXBuildFile; productRef = KS0000000000000000000701 /* KeystivoKit */; };
+		KS0000000000000000000102 /* KeystivoHelperKit in Frameworks */ = {isa = PBXBuildFile; productRef = KS0000000000000000000703 /* KeystivoHelperKit */; };
+		KS0000000000000000000103 /* KeystivoHelper in Embed Helper */ = {isa = PBXBuildFile; fileRef = KS0000000000000000000206 /* KeystivoHelper */; };
+		KS0000000000000000000104 /* com.keystivo.Keystivo.helper.plist in Embed Launch Daemon */ = {isa = PBXBuildFile; fileRef = KS0000000000000000000208 /* com.keystivo.Keystivo.helper.plist */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		KS0000000000000000000622 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = KS0000000000000000000801 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = KS0000000000000000000611;
+			remoteInfo = KeystivoHelper;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		KS0000000000000000000604 /* Embed Helper */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				KS0000000000000000000103 /* KeystivoHelper in Embed Helper */,
+			);
+			name = "Embed Helper";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KS0000000000000000000605 /* Embed Launch Daemon */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchDaemons;
+			dstSubfolderSpec = 1;
+			files = (
+				KS0000000000000000000104 /* com.keystivo.Keystivo.helper.plist in Embed Launch Daemon */,
+			);
+			name = "Embed Launch Daemon";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		KS0000000000000000000201 /* Keystivo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Keystivo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		KS0000000000000000000202 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
+		KS0000000000000000000203 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		KS0000000000000000000204 /* Keystivo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Keystivo.entitlements; sourceTree = "<group>"; };
+		KS0000000000000000000205 /* KeystivoKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = KeystivoKit; sourceTree = "<group>"; };
+		KS0000000000000000000206 /* KeystivoHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = KeystivoHelper; sourceTree = BUILT_PRODUCTS_DIR; };
+		KS0000000000000000000207 /* Helper.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Helper.xcconfig; sourceTree = "<group>"; };
+		KS0000000000000000000208 /* com.keystivo.Keystivo.helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = com.keystivo.Keystivo.helper.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		KS0000000000000000000301 /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = App;
+			sourceTree = "<group>";
+		};
+		KS0000000000000000000302 /* Helper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Helper;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		KS0000000000000000000401 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				KS0000000000000000000101 /* KeystivoKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KS0000000000000000000613 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				KS0000000000000000000102 /* KeystivoHelperKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		KS0000000000000000000501 = {
+			isa = PBXGroup;
+			children = (
+				KS0000000000000000000301 /* App */,
+				KS0000000000000000000302 /* Helper */,
+				KS0000000000000000000503 /* Config */,
+				KS0000000000000000000504 /* Packages */,
+				KS0000000000000000000502 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		KS0000000000000000000502 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				KS0000000000000000000201 /* Keystivo.app */,
+				KS0000000000000000000206 /* KeystivoHelper */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		KS0000000000000000000503 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				KS0000000000000000000202 /* Shared.xcconfig */,
+				KS0000000000000000000203 /* Info.plist */,
+				KS0000000000000000000204 /* Keystivo.entitlements */,
+				KS0000000000000000000207 /* Helper.xcconfig */,
+				KS0000000000000000000506 /* LaunchDaemons */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		KS0000000000000000000504 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				KS0000000000000000000205 /* KeystivoKit */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		KS0000000000000000000506 /* LaunchDaemons */ = {
+			isa = PBXGroup;
+			children = (
+				KS0000000000000000000208 /* com.keystivo.Keystivo.helper.plist */,
+			);
+			path = LaunchDaemons;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		KS0000000000000000000601 /* Keystivo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = KS0000000000000000000902 /* Build configuration list for PBXNativeTarget "Keystivo" */;
+			buildPhases = (
+				KS0000000000000000000602 /* Sources */,
+				KS0000000000000000000401 /* Frameworks */,
+				KS0000000000000000000603 /* Resources */,
+				KS0000000000000000000604 /* Embed Helper */,
+				KS0000000000000000000605 /* Embed Launch Daemon */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				KS0000000000000000000621 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				KS0000000000000000000301 /* App */,
+			);
+			name = Keystivo;
+			packageProductDependencies = (
+				KS0000000000000000000701 /* KeystivoKit */,
+			);
+			productName = Keystivo;
+			productReference = KS0000000000000000000201 /* Keystivo.app */;
+			productType = "com.apple.product-type.application";
+		};
+		KS0000000000000000000611 /* KeystivoHelper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = KS0000000000000000000903 /* Build configuration list for PBXNativeTarget "KeystivoHelper" */;
+			buildPhases = (
+				KS0000000000000000000612 /* Sources */,
+				KS0000000000000000000613 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				KS0000000000000000000302 /* Helper */,
+			);
+			name = KeystivoHelper;
+			packageProductDependencies = (
+				KS0000000000000000000703 /* KeystivoHelperKit */,
+			);
+			productName = KeystivoHelper;
+			productReference = KS0000000000000000000206 /* KeystivoHelper */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		KS0000000000000000000801 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					KS0000000000000000000601 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					KS0000000000000000000611 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = KS0000000000000000000901 /* Build configuration list for PBXProject "Keystivo" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				tr,
+				de,
+				fr,
+				es,
+				it,
+				"pt-BR",
+				ru,
+				"zh-Hans",
+				"zh-Hant",
+				ja,
+				ko,
+			);
+			mainGroup = KS0000000000000000000501;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				KS0000000000000000000702 /* XCLocalSwiftPackageReference "Packages/KeystivoKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = KS0000000000000000000502 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				KS0000000000000000000601 /* Keystivo */,
+				KS0000000000000000000611 /* KeystivoHelper */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		KS0000000000000000000603 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		KS0000000000000000000602 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KS0000000000000000000612 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		KS0000000000000000000621 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = KS0000000000000000000611 /* KeystivoHelper */;
+			targetProxy = KS0000000000000000000622 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		KS0000000000000000000911 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		KS0000000000000000000912 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		KS0000000000000000000921 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = KS0000000000000000000202 /* Shared.xcconfig */;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+			};
+			name = Debug;
+		};
+		KS0000000000000000000922 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = KS0000000000000000000202 /* Shared.xcconfig */;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+			};
+			name = Release;
+		};
+		KS0000000000000000000931 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = KS0000000000000000000207 /* Helper.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		KS0000000000000000000932 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = KS0000000000000000000207 /* Helper.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		KS0000000000000000000901 /* Build configuration list for PBXProject "Keystivo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KS0000000000000000000911 /* Debug */,
+				KS0000000000000000000912 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		KS0000000000000000000902 /* Build configuration list for PBXNativeTarget "Keystivo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KS0000000000000000000921 /* Debug */,
+				KS0000000000000000000922 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		KS0000000000000000000903 /* Build configuration list for PBXNativeTarget "KeystivoHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KS0000000000000000000931 /* Debug */,
+				KS0000000000000000000932 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		KS0000000000000000000702 /* XCLocalSwiftPackageReference "Packages/KeystivoKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/KeystivoKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		KS0000000000000000000701 /* KeystivoKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = KeystivoKit;
+		};
+		KS0000000000000000000703 /* KeystivoHelperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = KeystivoHelperKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = KS0000000000000000000801 /* Project object */;
+}

@@ -1,0 +1,318 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "comment": "App name",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo"
+          }
+        }
+      }
+    },
+    "NSAppleEventsUsageDescription": {
+      "comment": "Automation permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo steuert System Events und den Finder nur, wenn du Systembefehle ausführst, etwa den Dunkelmodus umschalten, den Papierkorb entleeren oder neu starten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo controls System Events and Finder only when you run system commands such as toggling Dark Mode, emptying the Trash or restarting."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo controla System Events y el Finder solo cuando ejecutas comandos del sistema, como activar el modo oscuro, vaciar la Papelera o reiniciar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo contrôle System Events et le Finder uniquement lorsque vous exécutez des commandes système, comme activer le mode sombre, vider la corbeille ou redémarrer."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo controlla System Events e il Finder solo quando esegui comandi di sistema, come attivare la modalità scura, svuotare il Cestino o riavviare."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivoは、ダークモードの切り替え、ゴミ箱を空にする、再起動などのシステムコマンドを実行するときにのみ、System EventsとFinderを制御します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo는 다크 모드 전환, 휴지통 비우기, 재시동 같은 시스템 명령을 실행할 때만 System Events와 Finder를 제어합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Keystivo controla o System Events e o Finder somente quando você executa comandos do sistema, como alternar o Modo Escuro, esvaziar o Lixo ou reiniciar."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo управляет System Events и Finder только при выполнении системных команд, например при переключении темного режима, очистке Корзины или перезагрузке."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo, System Events ve Finder'ı yalnızca Karanlık Mod'u açıp kapatmak, Çöp Sepeti'ni boşaltmak veya yeniden başlatmak gibi sistem komutlarını çalıştırdığınızda kontrol eder."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅当你运行系统命令（例如切换深色模式、清倒废纸篓或重新启动）时，Keystivo 才会控制 System Events 和访达。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有在你執行系統指令（例如切換深色模式、清空垃圾桶或重新開機）時，Keystivo 才會控制 System Events 和 Finder。"
+          }
+        }
+      }
+    },
+    "NSAudioCaptureUsageDescription": {
+      "comment": "System audio capture permission prompt (per-app volume)",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo verarbeitet den Ton jeder App in Echtzeit, um Lautstärke und Stummschaltung pro App zu ermöglichen. Audio wird nie aufgenommen oder gespeichert."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo processes each app's audio in real time to provide per-app volume and mute. Audio is never recorded or stored."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo procesa el audio de cada app en tiempo real para ofrecer volumen y silencio por app. El audio nunca se graba ni se guarda."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo traite le son de chaque app en temps réel pour régler le volume et la sourdine par app. Le son n'est jamais enregistré ni conservé."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo elabora l'audio di ogni app in tempo reale per offrire volume e silenziamento per singola app. L'audio non viene mai registrato né salvato."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivoは、アプリごとの音量とミュートを提供するために各アプリのオーディオをリアルタイムで処理します。オーディオが録音・保存されることはありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo는 앱별 음량 및 음소거를 제공하기 위해 각 앱의 오디오를 실시간으로 처리합니다. 오디오는 절대 녹음되거나 저장되지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Keystivo processa o áudio de cada app em tempo real para oferecer volume e silêncio por app. O áudio nunca é gravado nem armazenado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo обрабатывает звук каждой программы в реальном времени, чтобы регулировать громкость и отключать звук отдельно для каждой программы. Звук никогда не записывается и не сохраняется."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo, uygulama başına ses düzeyi ve sessize alma sağlamak için her uygulamanın sesini gerçek zamanlı işler. Ses asla kaydedilmez veya saklanmaz."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 会实时处理每个 App 的音频，以提供分 App 音量和静音。音频绝不会被录制或存储。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 會即時處理每個 App 的音訊，以提供個別 App 的音量與靜音功能。音訊絕不會被錄製或儲存。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "comment": "Microphone permission prompt (screen recording with microphone)",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo verwendet das Mikrofon nur während einer von dir gestarteten Bildschirmaufnahme und nur, wenn „Mikrofon aufnehmen“ aktiviert ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo uses the microphone only during a screen recording you start, and only when “Record the microphone” is turned on."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo usa el micrófono solo durante una grabación de pantalla que tú inicies y solo si “Grabar el micrófono” está activado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo utilise le micro uniquement pendant un enregistrement d’écran que vous avez lancé, et seulement si « Enregistrer le micro » est activé."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo usa il microfono solo durante una registrazione dello schermo avviata da te e solo se “Registra il microfono” è attivo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivoは、ユーザが開始した画面収録中で、「マイクを録音」がオンの場合にのみマイクを使用します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo는 사용자가 시작한 화면 기록 중에 ‘마이크 녹음’이 켜져 있을 때만 마이크를 사용합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Keystivo usa o microfone apenas durante uma gravação de tela iniciada por você e somente quando “Gravar o microfone” estiver ativado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo использует микрофон только во время записи экрана, которую вы запустили, и только если включен параметр «Записывать звук с микрофона»."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo mikrofonu yalnızca sizin başlattığınız bir ekran kaydı sırasında ve “Mikrofonu kaydet” açıksa kullanır."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 仅在你开始的屏幕录制期间、且打开了“录制麦克风”时使用麦克风。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 只會在你開始的螢幕錄製期間、且開啟「錄製麥克風」時使用麥克風。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
