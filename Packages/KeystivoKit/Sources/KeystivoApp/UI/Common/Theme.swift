@@ -120,6 +120,10 @@ private struct PopInModifier: ViewModifier {
 /// Animated gradient hairline used around focused surfaces.
 struct GlowBorder: View {
     var cornerRadius: CGFloat = Theme.panelCornerRadius
+    /// Each change plays one shimmer sweep (e.g. when a panel opens). The border
+    /// is static otherwise: a looping animation keeps re-rendering the gradient
+    /// in software, even while the panel is hidden.
+    var token: Int = 0
     @State private var phase: Double = 0
 
     var body: some View {
@@ -130,10 +134,13 @@ struct GlowBorder: View {
                 lineWidth: 1.2
             )
             .opacity(0.65)
-            .onAppear {
-                withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) { phase = 360 }
-            }
+            .onAppear(perform: sweep)
+            .onChange(of: token) { sweep() }
             .allowsHitTesting(false)
+    }
+
+    private func sweep() {
+        withAnimation(.easeOut(duration: 1.4)) { phase += 240 }
     }
 }
 

@@ -34,7 +34,7 @@ public final class FileSearch {
         if foldersOnly {
             predicates.append(NSPredicate(format: "%K == %@", NSMetadataItemContentTypeKey, "public.folder"))
         }
-        query.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        query.predicate = Self.predicate(matching: predicates)
         query.searchScopes = [NSMetadataQueryUserHomeScope, "/Applications"]
         query.sortDescriptors = [NSSortDescriptor(key: NSMetadataItemFSContentChangeDateKey, ascending: false)]
         self.query = query
@@ -51,6 +51,12 @@ public final class FileSearch {
                 self?.finish(limit: limit)
             }
         }
+    }
+
+    /// NSMetadataQuery throws (an Objective-C exception Swift can't catch) for an
+    /// AND compound predicate with a single subpredicate, so only combine 2+.
+    nonisolated static func predicate(matching predicates: [NSPredicate]) -> NSPredicate {
+        predicates.count == 1 ? predicates[0] : NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
     }
 
     private func finish(limit: Int) {

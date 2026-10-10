@@ -121,3 +121,21 @@ struct RankingTests {
         #expect(UsageStats().boost(now: now) == 0)
     }
 }
+
+@Suite("File search")
+struct FileSearchTests {
+    @Test func singleWordIsNotWrappedInACompoundPredicate() {
+        let word = NSPredicate(format: "%K LIKE[cd] %@", NSMetadataItemFSNameKey, "*ab*")
+        #expect(!(FileSearch.predicate(matching: [word]) is NSCompoundPredicate))
+        #expect(FileSearch.predicate(matching: [word, word]) is NSCompoundPredicate)
+    }
+
+    /// Regression: a one-word search used to make NSMetadataQuery throw an
+    /// Objective-C exception, which later crashed the app.
+    @Test func singleWordQueryIsAccepted() {
+        let query = NSMetadataQuery()
+        query.predicate = FileSearch.predicate(matching: [NSPredicate(format: "%K LIKE[cd] %@", NSMetadataItemFSNameKey, "*ab*")])
+        query.searchScopes = [NSMetadataQueryUserHomeScope, "/Applications"]
+        #expect(query.searchScopes.count == 2)
+    }
+}

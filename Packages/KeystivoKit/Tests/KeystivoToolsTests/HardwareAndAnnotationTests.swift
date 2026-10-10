@@ -216,3 +216,49 @@ struct AnnotationRenderingTests {
         #expect(ScreenRecorder.fileName(date: date) == "Keystivo Recording 2026-10-10 at 09.05.07.mov")
     }
 }
+
+@Suite("Process sampler")
+struct ProcessSamplerTests {
+    @Test func measuresOwnProcess() throws {
+        let sampler = ProcessSampler()
+        let me = getpid()
+        _ = sampler.sample(apps: [:])
+        // Burn a little CPU so the second sample has something to measure.
+        var x = 0.0
+        for i in 0..<3_000_000 { x += sqrt(Double(i)) }
+        #expect(x > 0)
+        let usage = sampler.sample(apps: [:])
+        let mine = try #require(usage.first { $0.id == me })
+        #expect(mine.cpu > 0)
+        #expect(mine.memory > 1_000_000)
+        #expect(!mine.name.isEmpty)
+    }
+
+    @Test func helpersAreGroupedUnderTheirApp() {
+        let me = getpid()
+        let usage = ProcessSampler().sample(apps: [me: (name: "Test Host", bundleID: "com.example.test")])
+        #expect(usage.contains { $0.id == me && $0.name == "Test Host" && $0.isApp })
+    }
+}
+
+@Suite("Network usage")
+struct NetworkUsageTests {
+    @Test func parsesNettopCSV() {
+        let output = """
+        ,bytes_in,bytes_out,
+        mDNSResponder.475,7181124,2026865,
+        com.apple.WebKi.1816,468,1592,
+        Aspire.Dashboar.1321,443981378,2726786,
+        garbage line
+        """
+        let parsed = NetworkUsageSampler.parse(output)
+        #expect(parsed.count == 3)
+        #expect(parsed[1816]?.name == "com.apple.WebKi" && parsed[1816]?.down == 468 && parsed[1816]?.up == 1592)
+        #expect(parsed[1321]?.name == "Aspire.Dashboar", "names may contain dots")
+    }
+
+    @Test func snapshotIsAvailableWithoutPrivileges() throws {
+        let output = try #require(NetworkUsageSampler.snapshot())
+        #expect(!NetworkUsageSampler.parse(output).isEmpty)
+    }
+}

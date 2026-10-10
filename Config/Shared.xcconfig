@@ -22,17 +22,17 @@ ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
 LOCALIZATION_PREFERS_STRING_CATALOGS = YES
 SWIFT_EMIT_LOC_STRINGS = YES
 
-// Ad-hoc signing by default. Set DEVELOPMENT_TEAM in Local.xcconfig so macOS keeps
-// Accessibility/Screen Recording permissions across rebuilds.
+// Ad-hoc signing by default. macOS ties privacy permissions to the code signature,
+// and ad-hoc signatures change with every build, so Accessibility/Screen Recording
+// must be granted again after each rebuild. Run Scripts/make-signing-cert.sh once:
+// it creates a local signing certificate and Local.xcconfig, which overrides these.
 CODE_SIGN_STYLE = Automatic
 CODE_SIGN_IDENTITY = -
 DEVELOPMENT_TEAM =
 
-// Ad-hoc signatures normally identify the app by its code hash, which changes on
-// every build, so macOS forgets Accessibility/Screen Recording grants after each
-// rebuild. For local ad-hoc builds we declare a designated requirement based on
-// the bundle identifier instead, keeping privacy grants stable across rebuilds.
-// Local.xcconfig clears this when a real signing identity is configured.
+// Without a certificate, declare a designated requirement on the bundle identifier.
+// Recent macOS versions still match ad-hoc apps by code hash for privacy grants,
+// so this is only a fallback; Local.xcconfig clears it.
 KEYSTIVO_ADHOC_REQUIREMENT = --requirements "=designated => identifier \"$(PRODUCT_BUNDLE_IDENTIFIER)\""
 OTHER_CODE_SIGN_FLAGS = $(inherited) $(KEYSTIVO_ADHOC_REQUIREMENT)
 

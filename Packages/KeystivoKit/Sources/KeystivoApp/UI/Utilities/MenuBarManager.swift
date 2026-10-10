@@ -94,40 +94,40 @@ final class MenuBarManager {
     }
 }
 
-/// Compact CPU / memory / network readout in the menu bar.
-final class SystemMonitorStatusItem {
-    private var item: NSStatusItem?
+/// CPU, memory, network and disk readouts in the menu bar, one item per metric
+/// (iStat Menus-style). Each item opens the details of its own metric only.
+final class SystemMonitorStatusItem: NSObject {
+    private var items: [MonitorMetric: NSStatusItem] = [:]
     private var popover: NSPopover?
-    private var metrics: [MonitorMetric] = []
+    private var popoverMetric: MonitorMetric?
+    private var isSampling = false
 
     func apply(_ settings: MenuBarSettings) {
-        metrics = settings.monitorMetrics
-        if settings.showsMonitor { install() } else { uninstall() }
-        rebuild()
+        let wanted = settings.showsMonitor ? settings.monitorMetrics : []
+        for (metric, item) in items where !wanted.contains(metric) {
+            NSStatusBar.system.removeStatusItem(item)
+            items[metric] = nil
+        }
+        // New items appear to the left of existing ones, so add the last metric first.
+        for metric in wanted.reversed() where items[metric] == nil { install(metric) }
+        if wanted.isEmpty, isSampling {
+            SystemMonitor.shared.release("menubar")
+            isSampling = false
+        } else if !wanted.isEmpty, !isSampling {
+            SystemMonitor.shared.acquire("menubar")
+            isSampling = true
+        }
     }
 
-    private func install() {
-        guard item == nil else { return }
+    private func install(_ metric: MonitorMetric) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.autosaveName = "KeystivoSystemMonitor"
-        item.button?.target = self
-        item.button?.action = #selector(clicked)
-        self.item = item
-        SystemMonitor.shared.acquire("menubar")
-        rebuild()
-    }
-
-    private func uninstall() {
-        guard let item else { return }
-        NSStatusBar.system.removeStatusItem(item)
-        self.item = nil
-        SystemMonitor.shared.release("menubar")
-    }
-
-    private func rebuild() {
-        guard let button = item?.button else { return }
-        button.subviews.forEach { $0.removeFromSuperview() }
-        let hosting = NSHostingView(rootView: MonitorStatusView(metrics: metrics))
+        item.autosaveName = "KeystivoMonitor.\(metric.rawValue)"
+        guard let button = item.button else { return }
+        button.target = self
+        button.action = #selector(clicked(_:))
+        button.identifier = NSUserInterfaceItemIdentifier(metric.rawValue)
+        button.setAccessibilityLabel(L(metric.titleKey))
+        let hosting = NSHostingView(rootView: MonitorStatusView(metric: metric))
         hosting.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(hosting)
         NSLayoutConstraint.activate([
@@ -136,40 +136,55 @@ final class SystemMonitorStatusItem {
             hosting.topAnchor.constraint(equalTo: button.topAnchor),
             hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor),
         ])
-        item?.length = hosting.fittingSize.width + 4
+        item.length = hosting.fittingSize.width + 4
+        items[metric] = item
     }
 
-    @objc private func clicked() {
-        guard let button = item?.button else { return }
-        if let popover, popover.isShown { popover.performClose(nil); return }
+    @objc private func clicked(_ sender: NSStatusBarButton) {
+        guard let raw = sender.identifier?.rawValue, let metric = MonitorMetric(rawValue: raw) else { return }
+        togglePopover(metric)
+    }
+
+    /// Shows the details of `metric`; clicking the same item again closes them.
+    func togglePopover(_ metric: MonitorMetric? = nil) {
+        guard let metric = metric ?? MonitorMetric.allCases.first(where: { items[$0] != nil }),
+              let button = items[metric]?.button else { return }
+        if let popover, popover.isShown {
+            popover.performClose(nil)
+            if popoverMetric == metric { return }
+        }
         let popover = NSPopover()
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: SystemMonitorDetailView().localizedRoot())
+        popover.animates = true
+        popover.contentViewController = NSHostingController(rootView: MetricDetailView(metric: metric).localizedRoot())
+        // An active popover gets the opaque, readable material; an inactive one
+        // turns see-through over bright windows.
+        NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
         self.popover = popover
+        popoverMetric = metric
     }
 }
 
 private struct MonitorStatusView: View {
-    let metrics: [MonitorMetric]
+    let metric: MonitorMetric
 
     var body: some View {
         let snapshot = SystemMonitor.shared.snapshot
-        HStack(spacing: 6) {
-            ForEach(metrics, id: \.self) { metric in
-                switch metric {
-                case .cpu: compact("cpu", "\(Int(snapshot.cpuUsage * 100))%")
-                case .memory: compact("memorychip", "\(Int(snapshot.memoryPressure * 100))%")
-                case .network:
-                    VStack(alignment: .trailing, spacing: -1) {
-                        Text("↑ " + Self.short(snapshot.networkUp))
-                        Text("↓ " + Self.short(snapshot.networkDown))
-                    }
-                    .font(.system(size: 8.5, weight: .medium).monospacedDigit())
-                    // Fixed width keeps the menu bar item from jittering as values change.
-                    .frame(width: 52, alignment: .trailing)
-                case .disk: compact("internaldrive", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file))
+        Group {
+            switch metric {
+            case .cpu: compact("cpu", "\(Int(snapshot.cpuUsage * 100))%")
+            case .memory: compact("memorychip", "\(Int(snapshot.memoryPressure * 100))%")
+            case .network:
+                VStack(alignment: .trailing, spacing: -1) {
+                    Text("↑ " + Self.short(snapshot.networkUp))
+                    Text("↓ " + Self.short(snapshot.networkDown))
                 }
+                .font(.system(size: 8.5, weight: .medium).monospacedDigit())
+                // Fixed width keeps the menu bar item from jittering as values change.
+                .frame(width: 52, alignment: .trailing)
+            case .disk: compact("internaldrive", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file))
             }
         }
         .padding(.horizontal, 4)
@@ -194,7 +209,182 @@ private struct MonitorStatusView: View {
     }
 }
 
-/// Detailed system monitor (also embedded in Settings and the control center).
+/// The popover of one menu bar metric.
+struct MetricDetailView: View {
+    let metric: MonitorMetric
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var consumer: String { "detail.\(metric.rawValue)" }
+
+    var body: some View {
+        let monitor = SystemMonitor.shared
+        let snapshot = monitor.snapshot
+        VStack(alignment: .leading, spacing: 12) {
+            switch metric {
+            case .cpu:
+                header("cpu", L("monitor.metric.cpu"), "\(Int(snapshot.cpuUsage * 100))%")
+                ProgressView(value: min(max(snapshot.cpuUsage, 0), 1)).tint(.blue)
+                Sparkline(values: monitor.cpuHistory, color: .blue).frame(height: 40)
+                CoreBars(usage: snapshot.perCoreUsage)
+                ProcessList(title: L("monitor.topCPU"), items: monitor.topCPU,
+                            placeholder: monitor.hasProcessSample ? L("monitor.idle") : L("monitor.measuring")) { String(format: "%.1f%%", $0.cpu) }
+                activityMonitorLink
+            case .memory:
+                header("memorychip", L("monitor.metric.memory"),
+                       "\(ByteCountFormatter.string(fromByteCount: Int64(snapshot.memoryUsed), countStyle: .memory)) / \(ByteCountFormatter.string(fromByteCount: Int64(snapshot.memoryTotal), countStyle: .memory))")
+                ProgressView(value: min(max(snapshot.memoryPressure, 0), 1)).tint(.purple)
+                ProcessList(title: L("monitor.topMemory"), items: monitor.topMemory, placeholder: L("monitor.measuring")) {
+                    ByteCountFormatter.string(fromByteCount: Int64($0.memory), countStyle: .memory)
+                }
+                activityMonitorLink
+            case .network:
+                header("network", L("monitor.metric.network"), "")
+                HStack(spacing: 10) {
+                    rate(L("monitor.download"), "arrow.down", snapshot.networkDown, .green)
+                    rate(L("monitor.upload"), "arrow.up", snapshot.networkUp, .orange)
+                }
+                ZStack {
+                    Sparkline(values: monitor.networkHistory, color: .green)
+                    Sparkline(values: monitor.uploadHistory, color: .orange)
+                }
+                .frame(height: 44)
+                NetworkList(items: monitor.topNetwork, placeholder: monitor.hasNetworkSample ? L("monitor.networkQuiet") : L("monitor.measuring"))
+                activityMonitorLink
+            case .disk:
+                let used = max(snapshot.diskTotal - snapshot.diskFree, 0)
+                header("internaldrive", L("monitor.metric.disk"), L("monitor.diskFree", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file)))
+                ProgressView(value: snapshot.diskTotal > 0 ? Double(used) / Double(snapshot.diskTotal) : 0).tint(.orange)
+                HStack {
+                    Text(L("monitor.used", ByteCountFormatter.string(fromByteCount: used, countStyle: .file)))
+                    Spacer()
+                    Text(L("monitor.capacity", ByteCountFormatter.string(fromByteCount: snapshot.diskTotal, countStyle: .file)))
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .frame(width: metric == .network ? 380 : 320)
+        .background {
+            // Solid backing so the text stays readable over bright windows.
+            Color(nsColor: .windowBackgroundColor).opacity(colorScheme == .dark ? 0.82 : 0.9)
+                .ignoresSafeArea()
+        }
+        .onAppear {
+            if metric == .cpu || metric == .memory {
+                SystemMonitor.shared.acquireProcesses(consumer)
+            } else if metric == .network {
+                SystemMonitor.shared.acquireNetworkProcesses(consumer)
+            } else {
+                SystemMonitor.shared.acquire(consumer)
+            }
+        }
+        .onDisappear { SystemMonitor.shared.release(consumer) }
+    }
+
+    private func header(_ symbol: String, _ title: String, _ value: String) -> some View {
+        HStack {
+            Label(title, systemImage: symbol).font(.headline)
+            Spacer()
+            Text(value).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+
+    private func rate(_ title: String, _ symbol: String, _ value: Double, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Label(title, systemImage: symbol).font(.caption).foregroundStyle(color)
+            Text(SystemMonitor.rate(value)).font(.title3.monospacedDigit().weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+    }
+
+    private var activityMonitorLink: some View {
+        Button(L("monitor.openActivityMonitor")) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+        }
+        .buttonStyle(.link)
+        .font(.caption)
+    }
+}
+
+private struct CoreBars: View {
+    let usage: [Double]
+
+    var body: some View {
+        if !usage.isEmpty {
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(Array(usage.enumerated()), id: \.offset) { _, value in
+                    Capsule().fill(Color.blue.opacity(0.35 + value * 0.65)).frame(width: 6, height: max(3, 28 * value))
+                }
+            }
+            .frame(height: 28, alignment: .bottom)
+        }
+    }
+}
+
+/// Apps using the network, with download and upload rates.
+private struct NetworkList: View {
+    let items: [NetworkUsage]
+    let placeholder: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L("monitor.topNetwork")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            if items.isEmpty {
+                Text(placeholder).font(.caption).foregroundStyle(.tertiary)
+            } else {
+                ForEach(items) { usage in
+                    HStack(spacing: 8) {
+                        if let bundleID = usage.bundleID {
+                            AppIconView(bundleID: bundleID, size: 16)
+                        } else {
+                            Image(systemName: "gearshape").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 16, height: 16)
+                        }
+                        Text(usage.name).font(.caption).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 6)
+                        Text("↓ " + SystemMonitor.rate(usage.down)).foregroundStyle(.green)
+                            .frame(minWidth: 70, alignment: .trailing)
+                        Text("↑ " + SystemMonitor.rate(usage.up)).foregroundStyle(.orange)
+                            .frame(minWidth: 70, alignment: .trailing)
+                    }
+                    .font(.caption.monospacedDigit())
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+        .animation(.snappy(duration: 0.25), value: items.map(\.id))
+    }
+}
+
+/// Top apps by CPU or memory; right-click to quit one.
+private struct ProcessList: View {
+    let title: String
+    let items: [ProcessUsage]
+    let placeholder: String
+    let value: (ProcessUsage) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            if items.isEmpty {
+                Text(placeholder).font(.caption).foregroundStyle(.tertiary)
+            } else {
+                ForEach(items) { usage in
+                    ProcessRow(usage: usage, value: value(usage))
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+    }
+}
+
+/// Detailed system monitor (embedded in Settings and the control center).
 struct SystemMonitorDetailView: View {
     var body: some View {
         let monitor = SystemMonitor.shared
@@ -202,14 +392,7 @@ struct SystemMonitorDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             metricRow(symbol: "cpu", title: L("monitor.metric.cpu"), value: "\(Int(snapshot.cpuUsage * 100))%", fraction: snapshot.cpuUsage, color: .blue)
             Sparkline(values: monitor.cpuHistory, color: .blue).frame(height: 30)
-            if !snapshot.perCoreUsage.isEmpty {
-                HStack(alignment: .bottom, spacing: 2) {
-                    ForEach(Array(snapshot.perCoreUsage.enumerated()), id: \.offset) { _, usage in
-                        Capsule().fill(Color.blue.opacity(0.35 + usage * 0.65)).frame(width: 6, height: max(3, 28 * usage))
-                    }
-                }
-                .frame(height: 28, alignment: .bottom)
-            }
+            CoreBars(usage: snapshot.perCoreUsage)
             metricRow(symbol: "memorychip", title: L("monitor.metric.memory"),
                       value: "\(ByteCountFormatter.string(fromByteCount: Int64(snapshot.memoryUsed), countStyle: .memory)) / \(ByteCountFormatter.string(fromByteCount: Int64(snapshot.memoryTotal), countStyle: .memory))",
                       fraction: snapshot.memoryPressure, color: .purple)
@@ -242,6 +425,34 @@ struct SystemMonitorDetailView: View {
             }
             if let fraction {
                 ProgressView(value: min(max(fraction, 0), 1)).tint(color)
+            }
+        }
+    }
+}
+
+private struct ProcessRow: View {
+    let usage: ProcessUsage
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let bundleID = usage.bundleID {
+                AppIconView(bundleID: bundleID, size: 16)
+            } else {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+            }
+            Text(usage.name).font(.caption).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 6)
+            Text(value).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            if let app = NSRunningApplication(processIdentifier: usage.id) {
+                Button(L("monitor.quit")) { app.terminate() }
+                Button(L("monitor.forceQuit")) { app.forceTerminate() }
             }
         }
     }

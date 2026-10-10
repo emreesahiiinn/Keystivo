@@ -139,6 +139,15 @@ public final class KeystivoRuntime {
         if let path = UserDefaults.standard.string(forKey: "KSAnnotateImage"), let image = NSImage(contentsOfFile: path) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.annotationEditor.open(image) }
         }
+        if UserDefaults.standard.bool(forKey: "KSShowSwitcher") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                Task { await self?.switcher.toggle(scope: .all, holdModifiers: []) }
+            }
+        }
+        // `-KSShowMonitorPopover cpu|memory|network|disk`
+        if let raw = UserDefaults.standard.string(forKey: "KSShowMonitorPopover"), let metric = MonitorMetric(rawValue: raw) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.systemMonitorItem.togglePopover(metric) }
+        }
         // `-KSSnapshotWindows /dir`: renders our own windows to PNG (needs no screen-recording permission).
         if let directory = UserDefaults.standard.string(forKey: "KSSnapshotWindows") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
@@ -156,6 +165,7 @@ public final class KeystivoRuntime {
     }
 
     public func shutdown() {
+        guard started else { return }
         store.saveNow()
         if ScreenRecorder.shared.isActive {
             // Let the movie file finalize before quitting.

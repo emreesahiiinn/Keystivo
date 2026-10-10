@@ -1,8 +1,18 @@
-// Copy to Config/Local.xcconfig (ignored by git) and fill in your team ID.
-// A stable signing identity keeps macOS privacy permissions (Accessibility,
-// Screen Recording) valid across rebuilds; ad-hoc builds must be re-approved.
-DEVELOPMENT_TEAM = ABCDE12345
-CODE_SIGN_IDENTITY = Apple Development
+// Copy to Config/Local.xcconfig (ignored by git), or run Scripts/make-signing-cert.sh
+// to create a local certificate and this file automatically. A stable signing
+// identity keeps macOS privacy permissions (Accessibility, Screen Recording)
+// valid across rebuilds; ad-hoc builds must be re-approved after every build.
+
+// Option 1: local self-signed certificate (Scripts/make-signing-cert.sh)
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Keystivo Local Signing
+DEVELOPMENT_TEAM =
+
+// Option 2: your Apple developer team (also allows installing the charging helper
+// on other Macs and notarized distribution)
+// CODE_SIGN_STYLE = Automatic
+// CODE_SIGN_IDENTITY = Apple Development
+// DEVELOPMENT_TEAM = ABCDE12345
 
 // A real identity has a stable designated requirement; drop the ad-hoc override.
 KEYSTIVO_ADHOC_REQUIREMENT =

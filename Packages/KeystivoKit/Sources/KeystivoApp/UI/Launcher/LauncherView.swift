@@ -30,7 +30,7 @@ struct LauncherView: View {
             footer
         }
         .keystivoPanelBackground()
-        .overlay(GlowBorder())
+        .overlay(GlowBorder(token: model.focusToken))
         .popIn(token: model.focusToken)
         .overlay(alignment: .bottomTrailing) {
             if model.isActionPanelOpen, let item = model.selectedItem {

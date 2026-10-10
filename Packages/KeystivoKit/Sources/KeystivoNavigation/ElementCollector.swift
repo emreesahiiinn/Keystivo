@@ -42,6 +42,10 @@ public enum ElementCollector {
     nonisolated static let opaqueRoles: Set<String> = [kAXTextAreaRole, kAXMenuButtonRole, kAXPopUpButtonRole, kAXSliderRole]
 
     public static func collect(mode: Mode, options: CollectorOptions = CollectorOptions()) async -> [NavigableElement] {
+        // Chromium and Electron build their web accessibility tree only on request.
+        if let app = NSWorkspace.shared.frontmostApplication, WebAccessibility.enable(for: app) {
+            try? await Task.sleep(for: .milliseconds(350))
+        }
         let roots = roots(options: options, mode: mode)
         let screenRects = NSScreen.screens.map { ScreenGeometry.frameAX(of: $0) }
         let deadline = ContinuousClock.now + options.timeBudget
@@ -89,7 +93,8 @@ public enum ElementCollector {
         screens: [CGRect], deadline: ContinuousClock.Instant, into results: inout [NavigableElement]
     ) {
         guard depth < options.maxDepth, results.count < options.maxElements, ContinuousClock.now < deadline else { return }
-        let values = element.attributes([kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXEnabledAttribute, "AXHidden"])
+        let values = element.attributes([kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXTitleAttribute, kAXDescriptionAttribute,
+                                         kAXEnabledAttribute, "AXHidden", kAXValueAttribute, kAXPlaceholderValueAttribute, kAXHelpAttribute])
         let role = values[kAXRoleAttribute] as? String ?? ""
         if (values["AXHidden"] as? Bool) == true { return }
 
@@ -115,13 +120,12 @@ public enum ElementCollector {
         if let frame, frame.width >= 4, frame.height >= 4 {
             let visible = clip.map { $0.intersection(frame) } ?? frame
             let enabled = (values[kAXEnabledAttribute] as? Bool) ?? true
-            let title = (values[kAXTitleAttribute] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                ?? (values[kAXDescriptionAttribute] as? String) ?? ""
             switch mode {
             case .click:
                 if enabled, !visible.isNull, visible.width >= 4, visible.height >= 4, isClickable(element, role: role) {
                     // Static text only counts when it is a link-like leaf with a press action.
                     if role != kAXStaticTextRole || element.actionNames.contains(kAXPressAction) {
+                        let title = label(element, role: role, values: values)
                         results.append(NavigableElement(
                             element: element, frame: visible, role: role, title: title,
                             canPress: element.actionNames.contains(kAXPressAction), isScrollArea: false
@@ -130,6 +134,7 @@ public enum ElementCollector {
                 }
             case .scroll:
                 if role == kAXScrollAreaRole || role == "AXWebArea", visible.width > 60, visible.height > 60 {
+                    let title = text(values[kAXTitleAttribute]) ?? text(values[kAXDescriptionAttribute]) ?? ""
                     results.append(NavigableElement(element: element, frame: visible, role: role, title: title, canPress: false, isScrollArea: true))
                 }
             }
@@ -152,16 +157,107 @@ public enum ElementCollector {
         return element.actionNames.contains(kAXPressAction)
     }
 
+    // MARK: Labels
+
+    /// Roles whose visible text usually lives in child static-text elements.
+    nonisolated static let containerTextRoles: Set<String> = [
+        "AXLink", kAXButtonRole, kAXCellRole, kAXRowRole, kAXMenuItemRole, kAXRadioButtonRole,
+        kAXCheckBoxRole, kAXPopUpButtonRole, kAXMenuButtonRole, kAXGroupRole, "AXDockItem",
+    ]
+
+    /// The name a user would search for: title, description, a short value,
+    /// placeholder or help text, or the text of the element's children.
+    nonisolated static func label(_ element: AXElement, role: String, values: [String: CFTypeRef]) -> String {
+        if let title = text(values[kAXTitleAttribute]) { return title }
+        if let description = text(values[kAXDescriptionAttribute]) { return description }
+        let valueRoles: Set<String> = [kAXButtonRole, kAXPopUpButtonRole, kAXMenuButtonRole, kAXStaticTextRole, kAXComboBoxRole, "AXLink"]
+        if valueRoles.contains(role), let value = text(values[kAXValueAttribute]), value.count <= 80 { return value }
+        if let placeholder = text(values[kAXPlaceholderValueAttribute]) { return placeholder }
+        if containerTextRoles.contains(role), let childText = childText(element) { return childText }
+        return text(values[kAXHelpAttribute]) ?? ""
+    }
+
+    /// Joins the static text found up to two levels below `element`.
+    nonisolated static func childText(_ element: AXElement) -> String? {
+        var parts: [String] = []
+        var queue: [(AXElement, Int)] = element.children(limit: 8).map { ($0, 1) }
+        while !queue.isEmpty, parts.count < 4 {
+            let (child, depth) = queue.removeFirst()
+            let values = child.attributes([kAXRoleAttribute, kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute])
+            let role = values[kAXRoleAttribute] as? String
+            if role == kAXStaticTextRole, let value = text(values[kAXValueAttribute]) {
+                parts.append(value)
+            } else if let title = text(values[kAXTitleAttribute]) ?? (role == kAXImageRole ? text(values[kAXDescriptionAttribute]) : nil) {
+                parts.append(title)
+            } else if depth < 2 {
+                queue.append(contentsOf: child.children(limit: 8).map { ($0, depth + 1) })
+            }
+        }
+        let joined = parts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? nil : String(joined.prefix(120))
+    }
+
+    nonisolated static func text(_ value: CFTypeRef?) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     /// Removes elements whose frame is (almost) identical to a previous one,
-    /// e.g. a button and its inner image.
+    /// e.g. a button and its inner image. When duplicates differ, the one with
+    /// a name wins so it stays searchable.
     nonisolated static func dedupe(_ elements: [NavigableElement]) -> [NavigableElement] {
         var kept: [NavigableElement] = []
         for element in elements {
-            let duplicate = kept.contains { existing in
+            let duplicate = kept.firstIndex { existing in
                 abs(existing.frame.midX - element.frame.midX) < 6 && abs(existing.frame.midY - element.frame.midY) < 6
             }
-            if !duplicate { kept.append(element) }
+            if let duplicate {
+                if kept[duplicate].title.isEmpty, !element.title.isEmpty { kept[duplicate] = element }
+            } else {
+                kept.append(element)
+            }
         }
         return kept
+    }
+}
+
+/// Chromium-based browsers and Electron apps only expose their web content to
+/// accessibility clients that ask for it, the way screen readers do.
+public enum WebAccessibility {
+    private static var enabledPIDs = Set<pid_t>()
+
+    nonisolated static let chromiumBundleIDs: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary",
+        "org.chromium.Chromium", "com.microsoft.edgemac", "com.brave.Browser", "com.vivaldi.Vivaldi",
+        "com.operasoftware.Opera", "company.thebrowser.Browser", "company.thebrowser.dia",
+    ]
+
+    /// Returns true when the tree was just switched on and needs a moment to build.
+    @discardableResult
+    public static func enable(for app: NSRunningApplication) -> Bool {
+        let pid = app.processIdentifier
+        guard !enabledPIDs.contains(pid) else { return false }
+        enabledPIDs = enabledPIDs.filter { NSRunningApplication(processIdentifier: $0) != nil }
+        let kind = engine(of: app)
+        guard kind != .none else { return false }
+        let element = AXElement.application(pid: pid)
+        var changed = element.set("AXManualAccessibility", kCFBooleanTrue)
+        if kind == .chromium { changed = element.set("AXEnhancedUserInterface", kCFBooleanTrue) || changed }
+        enabledPIDs.insert(pid)
+        return changed
+    }
+
+    enum Engine { case chromium, electron, none }
+
+    static func engine(of app: NSRunningApplication) -> Engine {
+        if let id = app.bundleIdentifier, chromiumBundleIDs.contains(id) { return .chromium }
+        guard let frameworks = app.bundleURL?.appending(path: "Contents/Frameworks"),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: frameworks.path) else { return .none }
+        if names.contains("Electron Framework.framework") { return .electron }
+        if names.contains(where: { $0.hasSuffix("Framework.framework") && ($0.contains("Chrom") || $0.contains("Edge") || $0.contains("Brave")) }) {
+            return .chromium
+        }
+        return .none
     }
 }

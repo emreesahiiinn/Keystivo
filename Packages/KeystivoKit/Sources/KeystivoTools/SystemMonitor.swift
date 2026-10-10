@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import KeystivoCore
@@ -31,11 +32,28 @@ public final class SystemMonitor {
     public private(set) var snapshot = SystemSnapshot()
     public private(set) var cpuHistory: [Double] = []
     public private(set) var networkHistory: [Double] = []
+    public private(set) var uploadHistory: [Double] = []
+    /// Apps and processes using the most CPU / memory (only while a detail view needs them).
+    public private(set) var topCPU: [ProcessUsage] = []
+    public private(set) var topMemory: [ProcessUsage] = []
+    /// False until two process samples exist (CPU needs a time delta).
+    public private(set) var hasProcessSample = false
+    /// Apps using the network right now (only while a detail view needs them).
+    public private(set) var topNetwork: [NetworkUsage] = []
+    public private(set) var hasNetworkSample = false
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var consumers = Set<String>()
     @ObservationIgnored private var previousTicks: [(user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)] = []
     @ObservationIgnored private var previousNetwork: (down: UInt64, up: UInt64, date: Date)?
+    @ObservationIgnored private let processSampler = ProcessSampler()
+    /// Free disk space goes through a slow system service; it barely changes, so refresh it rarely.
+    @ObservationIgnored private var disk: (free: Int64, total: Int64, date: Date)?
+    @ObservationIgnored private var processConsumers = Set<String>()
+    @ObservationIgnored private var processSampleCount = 0
+    @ObservationIgnored private let networkSampler = NetworkUsageSampler()
+    @ObservationIgnored private var networkConsumers = Set<String>()
+    @ObservationIgnored private var isSamplingNetwork = false
     public var interval: TimeInterval = 2
 
     public init() {}
@@ -55,10 +73,88 @@ public final class SystemMonitor {
 
     public func release(_ consumer: String) {
         consumers.remove(consumer)
+        processConsumers.remove(consumer)
+        networkConsumers.remove(consumer)
+        if networkConsumers.isEmpty {
+            topNetwork = []
+            hasNetworkSample = false
+            networkSampleCount = 0
+        }
+        if processConsumers.isEmpty {
+            topCPU = []
+            topMemory = []
+            hasProcessSample = false
+            processSampleCount = 0
+        }
         if consumers.isEmpty {
             timer?.invalidate()
             timer = nil
         }
+    }
+
+    /// Like ``acquire(_:)``, but also ranks processes (costs a little more per sample).
+    public func acquireProcesses(_ consumer: String) {
+        let first = processConsumers.isEmpty
+        processConsumers.insert(consumer)
+        acquire(consumer)
+        guard first else { return }
+        sampleProcesses()
+        // CPU needs two samples; take the second one quickly instead of waiting a full interval.
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard let self, !self.processConsumers.isEmpty else { return }
+            self.sampleProcesses()
+        }
+    }
+
+    /// Like ``acquire(_:)``, but also ranks apps by network traffic.
+    public func acquireNetworkProcesses(_ consumer: String) {
+        let first = networkConsumers.isEmpty
+        networkConsumers.insert(consumer)
+        acquire(consumer)
+        guard first else { return }
+        sampleNetwork()
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(900))
+            guard let self, !self.networkConsumers.isEmpty else { return }
+            self.sampleNetwork()
+        }
+    }
+
+    private func sampleNetwork() {
+        guard !isSamplingNetwork else { return }
+        isSamplingNetwork = true
+        let apps = Self.runningApps()
+        let sampler = networkSampler
+        Task.detached(priority: .utility) { [weak self] in
+            let usage = sampler.sample(apps: apps)
+            await MainActor.run {
+                guard let self else { return }
+                self.isSamplingNetwork = false
+                guard !self.networkConsumers.isEmpty else { return }
+                self.topNetwork = Array(usage.sorted { $0.total > $1.total }.prefix(6))
+                if self.networkSampleCount > 0 { self.hasNetworkSample = true }
+                self.networkSampleCount += 1
+            }
+        }
+    }
+
+    @ObservationIgnored private var networkSampleCount = 0
+
+    nonisolated static func runningApps() -> [pid_t: (name: String, bundleID: String?)] {
+        var apps: [pid_t: (name: String, bundleID: String?)] = [:]
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy != .prohibited {
+            apps[app.processIdentifier] = (app.localizedName ?? app.bundleIdentifier ?? "\(app.processIdentifier)", app.bundleIdentifier)
+        }
+        return apps
+    }
+
+    private func sampleProcesses() {
+        let usage = processSampler.sample(apps: Self.runningApps())
+        processSampleCount += 1
+        hasProcessSample = processSampleCount >= 2
+        topCPU = Array(usage.filter { $0.cpu >= 0.1 }.sorted { $0.cpu > $1.cpu }.prefix(5))
+        topMemory = Array(usage.sorted { $0.memory > $1.memory }.prefix(5))
     }
 
     public func sample() {
@@ -87,14 +183,19 @@ public final class SystemMonitor {
             next.networkUp = Double(network.up &- previous.up) / seconds
         }
         previousNetwork = (network.down, network.up, now)
-        if let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]) {
-            next.diskFree = values.volumeAvailableCapacityForImportantUsage ?? 0
-            next.diskTotal = Int64(values.volumeTotalCapacity ?? 0)
+        if disk == nil || now.timeIntervalSince(disk!.date) > 30,
+           let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]) {
+            disk = (values.volumeAvailableCapacityForImportantUsage ?? 0, Int64(values.volumeTotalCapacity ?? 0), now)
         }
+        next.diskFree = disk?.free ?? 0
+        next.diskTotal = disk?.total ?? 0
         next.thermalState = ProcessInfo.processInfo.thermalState
         snapshot = next
+        if !processConsumers.isEmpty { sampleProcesses() }
+        if !networkConsumers.isEmpty { sampleNetwork() }
         cpuHistory = Array((cpuHistory + [next.cpuUsage]).suffix(40))
         networkHistory = Array((networkHistory + [next.networkDown]).suffix(40))
+        uploadHistory = Array((uploadHistory + [next.networkUp]).suffix(40))
     }
 
     // MARK: Mach / BSD probes

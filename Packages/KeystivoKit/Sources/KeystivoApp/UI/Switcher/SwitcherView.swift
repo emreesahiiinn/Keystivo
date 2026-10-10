@@ -21,7 +21,7 @@ struct SwitcherView: View {
     @Namespace private var selectionNamespace
 
     var body: some View {
-        let cardWidth = model.showsThumbnails ? model.thumbnailWidth : 120
+        let cardWidth = model.cardWidth
         VStack(spacing: 10) {
             HStack {
                 if let group = model.groupFilter {
@@ -36,32 +36,47 @@ struct SwitcherView: View {
                     .foregroundStyle(.tertiary)
             }
             .frame(height: 16)
+            .padding(.horizontal, SwitcherLayout.inset)
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(cardWidth), spacing: SwitcherLayout.spacing), count: columnCount(cardWidth)), spacing: SwitcherLayout.spacing) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(cardWidth), spacing: SwitcherLayout.spacing), count: max(model.columns, 1)), spacing: SwitcherLayout.spacing) {
                         ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, window in
                             SwitcherCard(window: window, isSelected: index == model.selectedIndex, width: cardWidth, showsThumbnail: model.showsThumbnails, namespace: selectionNamespace)
                                 .id(window.id)
+                                .background {
+                                    GeometryReader { geometry in
+                                        Color.clear.preference(key: SwitcherCardFrames.self, value: [index: geometry.frame(in: .global)])
+                                    }
+                                }
                                 .onTapGesture { onSelect(index) }
                         }
                     }
+                    .padding(SwitcherLayout.inset)
                 }
                 .scrollIndicators(.never)
                 .animation(.spring(response: 0.28, dampingFraction: 0.8), value: model.selectedIndex)
                 .onChange(of: model.selectedIndex) { _, index in
-                    if model.entries.indices.contains(index) { proxy.scrollTo(model.entries[index].id) }
+                    // Pointer selection never scrolls: the card must stay under the pointer.
+                    guard !model.selectedByPointer, model.entries.indices.contains(index) else { return }
+                    withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(model.entries[index].id) }
                 }
+            }
+            .onPreferenceChange(SwitcherCardFrames.self) { frames in
+                MainActor.assumeIsolated { model.cardFrames = frames }
             }
         }
         .padding(SwitcherLayout.padding)
         .keystivoPanelBackground(cornerRadius: 22)
-        .overlay(GlowBorder(cornerRadius: 22))
+        .overlay(GlowBorder(cornerRadius: 22, token: model.openToken))
         .popIn(token: model.openToken)
     }
+}
 
-    private func columnCount(_ cardWidth: CGFloat) -> Int {
-        let maxWidth = (NSScreen.underMouse?.visibleFrame.width ?? 1400) * 0.9
-        return SwitcherLayout.columns(count: model.entries.count, cardWidth: cardWidth, maxWidth: maxWidth)
+/// Each card's frame, collected for hover selection.
+private struct SwitcherCardFrames: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 

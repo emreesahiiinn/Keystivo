@@ -57,20 +57,30 @@ Packages/KeystivoKit        Swift package with independently testable modules
 Requires Xcode 26 or later (developed with Xcode 27, Swift 6.4).
 
 ```bash
-make run        # build Debug and launch
-make test       # unit tests for every module (Swift Testing)
-make l10n-check # every string used in code exists in every language
+make signing-cert # once per Mac: local signing certificate (see below)
+make run          # build Debug and launch
+make test         # unit tests for every module (Swift Testing)
+make dmg          # Release build → dist/Keystivo-<version>.dmg
+make l10n-check   # every string used in code exists in every language
 ```
 
 Or open `Keystivo.xcodeproj` and run the **Keystivo** scheme.
+
+### Installing
+
+`make dmg` produces a drag-to-install disk image: open it and drag Keystivo into Applications. If Keystivo is started from somewhere else (the disk image, Downloads), it offers to move itself into Applications, trashes an older copy there, relaunches and ejects the disk image. Only one Keystivo runs at a time; a newly started copy quits the previous one, so updates take over cleanly. Settings live in `~/Library/Application Support/Keystivo` and are kept across updates.
+
+The disk image window layout is stored in `Config/DMG/DS_Store`. It is created the first time `make dmg` can control Finder (allow your terminal under *Privacy & Security › Automation*); run `Scripts/make-dmg.sh --relayout` to regenerate it.
 
 ### Signing and permissions
 
 Keystivo needs **Accessibility** (window control, keyboard navigation, gestures, ⌘⇥ takeover). **Screen Recording** (live previews, screen recordings), **System Audio** (per-app volume) and **Microphone** (recordings with your voice) are optional. The app can't be sandboxed; distribute it with Developer ID.
 
-Debug builds are ad-hoc signed with a designated requirement on the bundle identifier, so privacy grants survive rebuilds. To sign with your team, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and set `DEVELOPMENT_TEAM`.
+macOS ties privacy permissions to the code signature. Ad-hoc signatures change with every build, so without a certificate Accessibility and Screen Recording have to be granted again after each rebuild. `make signing-cert` creates a self-signed "Keystivo Local Signing" certificate in your login keychain and a git-ignored `Config/Local.xcconfig` that uses it; grants then survive rebuilds and updates. To sign with an Apple developer team instead (needed for distribution and for the charging helper on other Macs), see `Config/Local.xcconfig.example`.
 
-If an older build already appears in *System Settings › Privacy & Security* but Keystivo still reports "not granted", remove the entry with **−** and grant access again.
+After switching signing identities, Keystivo may appear in *System Settings › Privacy & Security* while still reporting "not granted": remove the entry with **−** once and grant access again.
+
+A locally signed disk image is meant for your own Macs. Copied to another Mac through the internet, Gatekeeper blocks it because it isn't notarized.
 
 ## Localization
 

@@ -49,6 +49,11 @@ public final class AppAudioController {
     @ObservationIgnored private var taps: [String: ProcessTap] = [:]
     @ObservationIgnored private var listenerBlocks: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
     @ObservationIgnored private var started = false
+    /// When each app last started or stopped playing, so a short pause between
+    /// tracks doesn't make it vanish from the mixer.
+    @ObservationIgnored private var lastPlaying: [String: Date] = [:]
+    /// How long an app stays in the mixer after it stops playing.
+    public static let recentWindow: TimeInterval = 30
     @ObservationIgnored private let refreshDebouncer = Debouncer(delay: .milliseconds(250))
 
     public init() {}
@@ -96,6 +101,11 @@ public final class AppAudioController {
         }
         // Listen for play/stop changes on each process object.
         observeRunningState(objects)
+        let wasPlaying = Set(entries.filter(\.isPlaying).map(\.bundleID))
+        let now = Date.now
+        for entry in grouped.values where entry.isPlaying || wasPlaying.contains(entry.bundleID) {
+            lastPlaying[entry.bundleID] = now
+        }
         entries = grouped.values.sorted { lhs, rhs in
             if lhs.isPlaying != rhs.isPlaying { return lhs.isPlaying }
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
@@ -150,6 +160,17 @@ public final class AppAudioController {
     // MARK: Control
 
     public func setting(for bundleID: String) -> AppAudioSetting { settings[bundleID] ?? AppAudioSetting() }
+
+    /// Apps worth showing in a mixer: playing now, playing until moments ago,
+    /// or with a custom level. Apps that merely opened an audio connection at
+    /// some point (most apps do) are left out.
+    public func audibleEntries(at date: Date = .now) -> [AppAudioEntry] {
+        entries.filter { entry in
+            entry.isPlaying
+                || !setting(for: entry.bundleID).isDefault
+                || lastPlaying[entry.bundleID].map { date.timeIntervalSince($0) < Self.recentWindow } == true
+        }
+    }
 
     public func setVolume(_ volume: Float, for bundleID: String) {
         var setting = setting(for: bundleID)

@@ -47,12 +47,24 @@ nonisolated public struct HintMatcher: Sendable {
 
     public mutating func type(_ character: Character) -> Outcome {
         typed.append(Character(character.lowercased()))
+        // A new query starts at its best match.
+        searchSelection = 0
         return evaluate()
     }
 
     public mutating func backspace() -> Outcome {
         if !typed.isEmpty { typed.removeLast() }
+        searchSelection = 0
         return evaluate()
+    }
+
+    /// Whether a typed character belongs in a query. Function keys (arrows,
+    /// Home, F1…) report private-use characters that must be ignored.
+    public static func isTypable(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first else { return false }
+        if (0xF700...0xF8FF).contains(scalar.value) { return false }
+        if scalar.properties.generalCategory == .control { return false }
+        return true
     }
 
     public mutating func moveSelection(by delta: Int) -> Outcome {

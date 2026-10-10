@@ -65,6 +65,8 @@ final class HintsController: EventTapHandler {
         var options = CollectorOptions()
         options.includeMenuBar = settings.includesMenuBar
         options.includeDock = settings.includesDock
+        // Searching needs names, so give big pages a little more time.
+        if mode == .search { options.timeBudget = .milliseconds(800) }
         let elements = await ElementCollector.collect(mode: mode == .scroll ? .scroll : .click, options: options)
         guard !elements.isEmpty else {
             runtime.hud.show(symbol: "rectangle.dashed", text: L(mode == .scroll ? "hints.noScrollAreas" : "hints.noElements"), style: .warning)
@@ -135,6 +137,7 @@ final class HintsController: EventTapHandler {
                 model.visible = Set(model.elements.indices)
             } else {
                 model.searchResults = []
+                model.visible = []
             }
         case .matched:
             break
@@ -202,11 +205,16 @@ final class HintsController: EventTapHandler {
             update(matcher.moveSelection(by: 1))
         case kVK_UpArrow where matcher.mode == .search:
             update(matcher.moveSelection(by: -1))
+        case kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow, kVK_Home, kVK_End, kVK_PageUp, kVK_PageDown, kVK_ForwardDelete:
+            break
         default:
+            // ⌘/⌃ chords are shortcuts, not query text.
+            if matcher.mode == .search, !modifiers.isDisjoint(with: [.command, .control]) { return .consume }
             var length = 0
             var chars = [UniChar](repeating: 0, count: 4)
             event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
-            guard length > 0, let character = String(utf16CodeUnits: chars, count: length).lowercased().first else { return .consume }
+            guard length > 0, let character = String(utf16CodeUnits: chars, count: length).lowercased().first,
+                  HintMatcher.isTypable(character) else { return .consume }
             if character == "/" && matcher.mode == .labels {
                 matcher.setMode(.search)
                 update(matcher.evaluate())

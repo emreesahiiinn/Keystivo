@@ -18,6 +18,16 @@ import SwiftUI
 /// Application delegate used by the thin app target.
 public final class KeystivoAppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        #if !DEBUG
+        // Development builds run from DerivedData on purpose.
+        if ApplicationMover.offerMoveIfNeeded() { return }
+        #endif
+        #if DEBUG
+        // `-KSAllowSecondInstance YES`: inspect a dev build without quitting the installed app.
+        if !UserDefaults.standard.bool(forKey: "KSAllowSecondInstance") { SingleInstance.takeOver() }
+        #else
+        SingleInstance.takeOver()
+        #endif
         KeystivoRuntime.shared.start()
     }
 

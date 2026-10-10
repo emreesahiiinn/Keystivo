@@ -8,7 +8,7 @@ DERIVED := build/DerivedData
 APP := $(DERIVED)/Build/Products/Debug/Keystivo.app
 PACKAGE := Packages/KeystivoKit
 
-.PHONY: build release run test l10n-check clean
+.PHONY: build release run test l10n-check dmg signing-cert clean
 
 build: ## Debug build of the app
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Debug -derivedDataPath $(DERIVED) build | grep -E "error:|warning: .*Keystivo|BUILD"
@@ -23,8 +23,14 @@ run: build ## Build, then (re)start the app
 test: ## Unit tests for every module
 	swift test --package-path $(PACKAGE)
 
+dmg: ## Release build packaged as dist/Keystivo-<version>.dmg (drag to Applications)
+	Scripts/make-dmg.sh
+
+signing-cert: ## One-time: local signing certificate so permissions survive rebuilds
+	Scripts/make-signing-cert.sh
+
 l10n-check: ## Verify every string used in code exists in all languages
 	python3 Scripts/l10n.py check
 
 clean:
-	rm -rf build $(PACKAGE)/.build
+	rm -rf build dist $(PACKAGE)/.build

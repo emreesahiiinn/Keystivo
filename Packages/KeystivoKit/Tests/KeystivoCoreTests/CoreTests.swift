@@ -212,3 +212,25 @@ struct LocalizationTests {
         #expect(missing.isEmpty, "\(code) is missing \(missing.count) keys, e.g. \(missing.prefix(5))")
     }
 }
+
+@Suite("Install location")
+struct InstallLocationTests {
+    let home = "/Users/test"
+
+    @Test func classifiesCommonLocations() {
+        #expect(InstallLocation.classify("/Applications/Keystivo.app", home: home) == .applications)
+        #expect(InstallLocation.classify("/Users/test/Applications/Keystivo.app", home: home) == .applications)
+        #expect(InstallLocation.classify("/Volumes/Keystivo/Keystivo.app", home: home) == .diskImage)
+        #expect(InstallLocation.classify("/private/var/folders/x/T/AppTranslocation/ABC/d/Keystivo.app", home: home) == .translocated)
+        #expect(InstallLocation.classify("/Users/test/Downloads/Keystivo.app", home: home) == .other)
+        #expect(InstallLocation.classify("/Users/test/Dev/build/DerivedData/Build/Products/Release/Keystivo.app", home: home) == .development)
+        #expect(InstallLocation.classify("/Applications/../Users/test/Downloads/Keystivo.app", home: home) == .other)
+    }
+
+    @Test func offersMoveOnlyOutsideApplications() {
+        #expect(!InstallLocation.applications.shouldOfferMove)
+        #expect(!InstallLocation.development.shouldOfferMove)
+        #expect(InstallLocation.diskImage.shouldOfferMove && InstallLocation.diskImage.copiesInsteadOfMoving)
+        #expect(InstallLocation.other.shouldOfferMove && !InstallLocation.other.copiesInsteadOfMoving)
+    }
+}

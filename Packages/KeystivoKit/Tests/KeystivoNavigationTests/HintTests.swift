@@ -89,3 +89,30 @@ struct HintMatcherTests {
         #expect(HintActivation(modifiers: .control) == .moveMouse)
     }
 }
+
+@Suite("Element search fixes")
+struct ElementSearchTests {
+    @Test func selectionResetsWhileTyping() {
+        var matcher = HintMatcher(labels: ["a", "s", "d"], titles: ["Save", "Save As", "Share"])
+        matcher.setMode(.search)
+        _ = matcher.type("s")
+        _ = matcher.moveSelection(by: 2)
+        #expect(matcher.searchSelection == 2)
+        _ = matcher.type("a")
+        #expect(matcher.searchSelection == 0, "a narrower query starts at its best match")
+        guard case .matched(let index) = matcher.confirm() else {
+            Issue.record("Return must still activate a result")
+            return
+        }
+        #expect([0, 1].contains(index))
+    }
+
+    @Test func functionKeysAreNotQueryText() {
+        #expect(HintMatcher.isTypable("a"))
+        #expect(HintMatcher.isTypable("ş"))
+        #expect(HintMatcher.isTypable(" "))
+        #expect(!HintMatcher.isTypable(Character(UnicodeScalar(0xF702)!)), "left arrow")
+        #expect(!HintMatcher.isTypable(Character(UnicodeScalar(0xF729)!)), "home")
+        #expect(!HintMatcher.isTypable("\u{7F}"))
+    }
+}

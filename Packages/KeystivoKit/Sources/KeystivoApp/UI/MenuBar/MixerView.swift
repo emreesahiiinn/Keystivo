@@ -117,22 +117,31 @@ struct MixerView: View {
             }
             if !runtime.config.audio.appVolumeEnabled {
                 Text(L("mixer.disabled")).font(.caption).foregroundStyle(.secondary)
-            } else if apps.entries.isEmpty {
-                Text(L("mixer.empty")).font(.caption).foregroundStyle(.secondary)
             } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { _ in
-                    VStack(spacing: 8) {
-                        ForEach(apps.entries.prefix(compact ? 6 : 20)) { entry in
-                            AppMixerRow(entry: entry)
+                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { context in
+                    let audible = apps.audibleEntries(at: context.date)
+                    if audible.isEmpty {
+                        Text(L("mixer.empty")).font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(audible.prefix(compact ? 6 : 20)) { entry in
+                                AppMixerRow(entry: entry)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                         }
+                        .animation(.snappy(duration: 0.25), value: audible.map(\.id))
                     }
                 }
             }
             if let error = apps.lastError {
-                Label(L("mixer.error"), systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .help(error)
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(L("mixer.error")).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button(L("permissions.grant")) { PermissionCenter.shared.request(.audioCapture) }
+                        .controlSize(.small)
+                }
+                .help(error)
             }
         }
     }
