@@ -49,6 +49,18 @@ public enum ElementCollector {
         let roots = roots(options: options, mode: mode)
         let screenRects = NSScreen.screens.map { ScreenGeometry.frameAX(of: $0) }
         let deadline = ContinuousClock.now + options.timeBudget
+        // Accessibility requests to our own process aren't IPC: AppKit answers
+        // them on the calling thread, walking SwiftUI view graphs that must
+        // only be touched on the main thread. Keystivo's own windows (e.g.
+        // Settings) are therefore walked on the main actor.
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == getpid() {
+            var results: [NavigableElement] = []
+            for (root, clip) in roots {
+                walk(root, clip: clip, depth: 0, mode: mode, options: options, screens: screenRects, deadline: deadline, into: &results)
+                if results.count >= options.maxElements { break }
+            }
+            return dedupe(results)
+        }
         return await Task.detached(priority: .userInitiated) {
             var results: [NavigableElement] = []
             for (root, clip) in roots {

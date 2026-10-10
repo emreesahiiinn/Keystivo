@@ -254,6 +254,16 @@ struct DockPage: View {
                 LabeledContent(L("dockSettings.previewSize")) {
                     Slider(value: $runtime.config.dock.previewWidth, in: 140...360, step: 20).frame(width: 220)
                 }
+                LabeledContent(L("dockSettings.previewDelay")) {
+                    HStack {
+                        Slider(value: $runtime.config.dock.previewDelay, in: 0...1, step: 0.05).frame(width: 220)
+                        Text(Measurement(value: runtime.config.dock.previewDelay, unit: UnitDuration.seconds)
+                            .formatted(.measurement(width: .abbreviated, numberFormatStyle: .number.precision(.fractionLength(2)))))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 56, alignment: .trailing)
+                    }
+                }
                 Text(L("dockSettings.previewsFooter")).font(.caption).foregroundStyle(.secondary)
             }
             Section(L("dockSettings.launcherBar")) {

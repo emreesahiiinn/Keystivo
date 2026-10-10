@@ -173,6 +173,8 @@ nonisolated struct LauncherBarSettings: Codable, Hashable, Sendable {
 nonisolated struct DockSettings: Codable, Hashable, Sendable {
     var previewsEnabled = true
     var previewWidth: Double = 220
+    /// Seconds the pointer rests on an icon before its preview appears.
+    var previewDelay: Double = 0.35
     var launcherBar = LauncherBarSettings()
 }
 

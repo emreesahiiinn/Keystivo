@@ -94,65 +94,105 @@ final class MenuBarManager {
     }
 }
 
-/// CPU, memory, network and disk readouts in the menu bar, one item per metric
-/// (iStat Menus-style). Each item opens the details of its own metric only.
+/// CPU, memory, network and disk readouts as one compact menu bar item, so
+/// other icons can't end up between them. Each metric is its own view inside
+/// the item, and clicking a metric opens the details of that metric only.
 final class SystemMonitorStatusItem: NSObject {
-    private var items: [MonitorMetric: NSStatusItem] = [:]
+    private var item: NSStatusItem?
+    private var stack: NSStackView?
     private var popover: NSPopover?
     private var popoverMetric: MonitorMetric?
-    private var isSampling = false
+    private var metrics: [MonitorMetric] = []
 
     func apply(_ settings: MenuBarSettings) {
         let wanted = settings.showsMonitor ? settings.monitorMetrics : []
-        for (metric, item) in items where !wanted.contains(metric) {
-            NSStatusBar.system.removeStatusItem(item)
-            items[metric] = nil
-        }
-        // New items appear to the left of existing ones, so add the last metric first.
-        for metric in wanted.reversed() where items[metric] == nil { install(metric) }
-        if wanted.isEmpty, isSampling {
-            SystemMonitor.shared.release("menubar")
-            isSampling = false
-        } else if !wanted.isEmpty, !isSampling {
-            SystemMonitor.shared.acquire("menubar")
-            isSampling = true
-        }
+        guard wanted != metrics || (item == nil) != wanted.isEmpty else { return }
+        metrics = wanted
+        if wanted.isEmpty { uninstall() } else { install() }
     }
 
-    private func install(_ metric: MonitorMetric) {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.autosaveName = "KeystivoMonitor.\(metric.rawValue)"
-        guard let button = item.button else { return }
-        button.target = self
-        button.action = #selector(clicked(_:))
-        button.identifier = NSUserInterfaceItemIdentifier(metric.rawValue)
-        button.setAccessibilityLabel(L(metric.titleKey))
-        let hosting = NSHostingView(rootView: MonitorStatusView(metric: metric))
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(hosting)
+    private func install() {
+        if item == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.autosaveName = "KeystivoSystemMonitor"
+            item.button?.target = self
+            item.button?.action = #selector(clicked(_:))
+            self.item = item
+            SystemMonitor.shared.acquire("menubar")
+        }
+        guard let item, let button = item.button else { return }
+        button.subviews.forEach { $0.removeFromSuperview() }
+        button.setAccessibilityLabel(metrics.map { L($0.titleKey) }.joined(separator: ", "))
+
+        let stack = PassthroughStackView()
+        stack.orientation = .horizontal
+        stack.spacing = 7
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 5, bottom: 0, right: 5)
+        stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        for metric in metrics {
+            let segment = NSHostingView(rootView: MonitorSegmentView(metric: metric) { [weak self] in self?.updateLength() })
+            segment.identifier = NSUserInterfaceItemIdentifier(metric.rawValue)
+            stack.addArrangedSubview(segment)
+        }
+        button.addSubview(stack)
         NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: button.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+            stack.topAnchor.constraint(equalTo: button.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: button.bottomAnchor),
         ])
-        item.length = hosting.fittingSize.width + 4
-        items[metric] = item
+        self.stack = stack
+        updateLength()
+    }
+
+    /// Values change width (e.g. free disk space); keep the item exactly as wide as its content.
+    private func updateLength() {
+        guard let item, let stack else { return }
+        let width = ceil(stack.fittingSize.width)
+        if abs(item.length - width) > 0.5 { item.length = width }
+    }
+
+    private func uninstall() {
+        popover?.performClose(nil)
+        guard let item else { return }
+        NSStatusBar.system.removeStatusItem(item)
+        self.item = nil
+        stack = nil
+        SystemMonitor.shared.release("menubar")
     }
 
     @objc private func clicked(_ sender: NSStatusBarButton) {
-        guard let raw = sender.identifier?.rawValue, let metric = MonitorMetric(rawValue: raw) else { return }
-        togglePopover(metric)
+        guard let window = sender.window else { return }
+        // The pointer itself, not the current event: robust for status bar clicks.
+        let point = sender.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        togglePopover(metric(atX: point.x, in: sender))
     }
 
-    /// Shows the details of `metric`; clicking the same item again closes them.
+    /// The metric whose segment is nearest to `x` (button coordinates).
+    func metric(atX x: CGFloat, in button: NSView) -> MonitorMetric? {
+        guard let stack else { return metrics.first }
+        let segments: [(MonitorMetric, CGRect)] = stack.arrangedSubviews.compactMap { view in
+            guard let raw = view.identifier?.rawValue, let metric = MonitorMetric(rawValue: raw) else { return nil }
+            return (metric, view.convert(view.bounds, to: button))
+        }
+        if let hit = segments.first(where: { $0.1.minX - 3.5 <= x && x <= $0.1.maxX + 3.5 }) { return hit.0 }
+        return segments.min { abs($0.1.midX - x) < abs($1.1.midX - x) }?.0 ?? metrics.first
+    }
+
+    private func segmentFrame(_ metric: MonitorMetric, in button: NSView) -> CGRect? {
+        guard let view = stack?.arrangedSubviews.first(where: { $0.identifier?.rawValue == metric.rawValue }) else { return nil }
+        return view.convert(view.bounds, to: button)
+    }
+
+    /// Shows the details of `metric` below its segment; clicking the same segment again closes them.
     func togglePopover(_ metric: MonitorMetric? = nil) {
-        guard let metric = metric ?? MonitorMetric.allCases.first(where: { items[$0] != nil }),
-              let button = items[metric]?.button else { return }
+        guard let metric = metric ?? metrics.first, let button = item?.button else { return }
         if let popover, popover.isShown {
             popover.performClose(nil)
             if popoverMetric == metric { return }
         }
+        let segment = segmentFrame(metric, in: button) ?? button.bounds
+        let anchor = CGRect(x: segment.minX, y: 0, width: segment.width, height: button.bounds.height)
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
@@ -160,43 +200,67 @@ final class SystemMonitorStatusItem: NSObject {
         // An active popover gets the opaque, readable material; an inactive one
         // turns see-through over bright windows.
         NSApp.activate()
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.show(relativeTo: anchor, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         self.popover = popover
         popoverMetric = metric
     }
+
+    #if DEBUG
+    /// Self-check: clicking the middle of each segment must pick that segment.
+    func verifyHitTesting() -> [String] {
+        guard let button = item?.button, let window = button.window else { return ["no item"] }
+        return metrics.compactMap { metric in
+            guard let frame = segmentFrame(metric, in: button) else { return "\(metric.rawValue): no frame" }
+            let screen = window.convertPoint(toScreen: button.convert(CGPoint(x: frame.midX, y: frame.midY), to: nil))
+            let back = button.convert(window.convertPoint(fromScreen: screen), from: nil)
+            let hit = self.metric(atX: back.x, in: button)
+            return "\(metric.rawValue) [\(Int(frame.minX))–\(Int(frame.maxX))] → \(hit?.rawValue ?? "nil")"
+        }
+    }
+    #endif
 }
 
-private struct MonitorStatusView: View {
+/// Lets every click inside the item reach the status bar button.
+private final class PassthroughStackView: NSStackView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private struct MonitorSegmentView: View {
     let metric: MonitorMetric
+    let onWidthChange: () -> Void
 
     var body: some View {
         let snapshot = SystemMonitor.shared.snapshot
-        Group {
-            switch metric {
-            case .cpu: compact("cpu", "\(Int(snapshot.cpuUsage * 100))%")
-            case .memory: compact("memorychip", "\(Int(snapshot.memoryPressure * 100))%")
-            case .network:
-                VStack(alignment: .trailing, spacing: -1) {
-                    Text("↑ " + Self.short(snapshot.networkUp))
-                    Text("↓ " + Self.short(snapshot.networkDown))
-                }
-                .font(.system(size: 8.5, weight: .medium).monospacedDigit())
-                // Fixed width keeps the menu bar item from jittering as values change.
-                .frame(width: 52, alignment: .trailing)
-            case .disk: compact("internaldrive", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file))
-            }
-        }
-        .padding(.horizontal, 4)
-        .fixedSize()
+        content(snapshot)
+            .fixedSize()
+            .frame(maxHeight: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in onWidthChange() }
     }
 
-    private func compact(_ symbol: String, _ value: String) -> some View {
-        HStack(spacing: 2) {
+    @ViewBuilder
+    private func content(_ snapshot: SystemSnapshot) -> some View {
+        switch metric {
+        case .cpu: compact("cpu", "\(Int(snapshot.cpuUsage * 100))%", width: 27)
+        case .memory: compact("memorychip", "\(Int(snapshot.memoryPressure * 100))%", width: 27)
+        case .network:
+            VStack(alignment: .trailing, spacing: -1) {
+                Text("↑ " + Self.short(snapshot.networkUp))
+                Text("↓ " + Self.short(snapshot.networkDown))
+            }
+            .font(.system(size: 8.5, weight: .medium).monospacedDigit())
+            // Fixed width keeps the item from jittering as values change.
+            .frame(width: 39, alignment: .trailing)
+        case .disk: compact("internaldrive", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file), width: nil)
+        }
+    }
+
+    private func compact(_ symbol: String, _ value: String, width: CGFloat?) -> some View {
+        HStack(spacing: 3) {
             Image(systemName: symbol).font(.system(size: 10))
             Text(value)
                 .font(.system(size: 11, weight: .medium).monospacedDigit())
-                .frame(minWidth: 30, alignment: .trailing)
+                .frame(minWidth: width, alignment: .trailing)
         }
     }
 

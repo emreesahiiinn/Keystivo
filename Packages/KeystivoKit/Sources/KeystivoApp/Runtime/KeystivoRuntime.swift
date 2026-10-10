@@ -144,13 +144,34 @@ public final class KeystivoRuntime {
                 Task { await self?.switcher.toggle(scope: .all, holdModifiers: []) }
             }
         }
+        // `-KSStartHints click|search`: hint session over whatever is frontmost.
+        if let raw = UserDefaults.standard.string(forKey: "KSStartHints") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                Task { await self?.hints.start(mode: raw == "search" ? .search : .click) }
+            }
+        }
+        if UserDefaults.standard.bool(forKey: "KSVerifyMonitorHits") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                for line in self?.systemMonitorItem.verifyHitTesting() ?? [] { Log.logger("Debug").notice("monitor hit: \(line, privacy: .public)") }
+            }
+        }
+        if UserDefaults.standard.bool(forKey: "KSTestDockMenu") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                Task {
+                    for line in await self?.dockPreviews.runDockMenuSelfTest() ?? [] {
+                        Log.logger("Debug").notice("dock test: \(line, privacy: .public)")
+                    }
+                }
+            }
+        }
         // `-KSShowMonitorPopover cpu|memory|network|disk`
         if let raw = UserDefaults.standard.string(forKey: "KSShowMonitorPopover"), let metric = MonitorMetric(rawValue: raw) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.systemMonitorItem.togglePopover(metric) }
         }
         // `-KSSnapshotWindows /dir`: renders our own windows to PNG (needs no screen-recording permission).
         if let directory = UserDefaults.standard.string(forKey: "KSSnapshotWindows") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            let delay = UserDefaults.standard.double(forKey: "KSSnapshotDelay")
+            DispatchQueue.main.asyncAfter(deadline: .now() + (delay > 0 ? delay : 3)) {
                 for (index, window) in NSApp.windows.enumerated() where window.isVisible {
                     guard let view = window.contentView?.superview ?? window.contentView,
                           let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
