@@ -25,6 +25,15 @@ import SwiftUI
 /// into them whenever a section changes.
 @Observable
 public final class KeystivoRuntime {
+    /// `-KSLanguage de` (debug builds): show another language without changing the setting.
+    static var languageOverridden: Bool {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "KSLanguage") != nil
+        #else
+        false
+        #endif
+    }
+
     public static let shared = KeystivoRuntime()
 
     let store: ConfigurationStore
@@ -79,6 +88,7 @@ public final class KeystivoRuntime {
         started = true
         let config = store.configuration
         Localizer.shared.setPreference(config.general.language)
+        if Self.languageOverridden, let language = UserDefaults.standard.string(forKey: "KSLanguage") { Localizer.shared.setPreference(language) }
         applyActivationPolicy()
         applyAppearance()
 
@@ -123,6 +133,7 @@ public final class KeystivoRuntime {
         }
         EventTapManager.shared.add(FocusFollowsMouse.shared)
         EventTapManager.shared.add(ModifierDragEngine.shared)
+        EventTapManager.shared.add(WindowButtonEngine.shared)
         EventTapManager.shared.add(ScrollEngine.shared)
         EventTapManager.shared.add(MouseButtonEngine.shared)
         EventTapManager.shared.add(HyperKeyEngine.shared)
@@ -207,6 +218,19 @@ public final class KeystivoRuntime {
                 }
             }
         }
+        // `-KSProbeWindowButtons /path/result.txt`: finds title bar buttons of visible windows (read-only).
+        if let output = UserDefaults.standard.string(forKey: "KSProbeWindowButtons") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { WindowButtonProbe.run(output: URL(fileURLWithPath: output)) }
+        }
+        // `-KSTestWindowButtons /path/result.txt -KSTestTargetBundle id`: feeds the engine clicks on the
+        // target app's red button (no real events, the pointer stays put) and expects the app to quit.
+        if let output = UserDefaults.standard.string(forKey: "KSTestWindowButtons"),
+           let bundleID = UserDefaults.standard.string(forKey: "KSTestTargetBundle") {
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await WindowButtonSelfTest.run(bundleID: bundleID, output: URL(fileURLWithPath: output))
+            }
+        }
         // `-KSTestModifierDrag /path/result.txt`: drags another app's window with ⌃⌥, then restores it.
         if let output = UserDefaults.standard.string(forKey: "KSTestModifierDrag") {
             Task {
@@ -279,6 +303,15 @@ public final class KeystivoRuntime {
         // `-KSSnapshotWindows /dir`: renders our own windows to PNG (needs no screen-recording permission).
         if let directory = UserDefaults.standard.string(forKey: "KSSnapshotWindows") {
             let delay = UserDefaults.standard.double(forKey: "KSSnapshotDelay")
+            // `-KSSnapshotHeight 2400` makes tall windows show everything at once.
+            let height = UserDefaults.standard.double(forKey: "KSSnapshotHeight")
+            if height > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    for window in NSApp.windows where window.isVisible && window.styleMask.contains(.titled) {
+                        window.setFrame(NSRect(x: window.frame.minX, y: window.frame.maxY - height, width: window.frame.width, height: height), display: true)
+                    }
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + (delay > 0 ? delay : 3)) {
                 for (index, window) in NSApp.windows.enumerated() where window.isVisible {
                     guard let view = window.contentView?.superview ?? window.contentView,
@@ -430,7 +463,7 @@ public final class KeystivoRuntime {
         let profileChanged = changed(\.workspace.activeProfileID)
 
         if changed(\.general) {
-            if Localizer.shared.preference != new.general.language { Localizer.shared.setPreference(new.general.language) }
+            if Localizer.shared.preference != new.general.language, !Self.languageOverridden { Localizer.shared.setPreference(new.general.language) }
             applyActivationPolicy()
             applyAppearance()
             applyLaunchAtLogin(new.general.launchAtLogin)
@@ -448,6 +481,10 @@ public final class KeystivoRuntime {
             drag.excludedBundleIDs = Set(new.windows.dragSnap.excludedApps)
             drag.gap = new.windows.gap
             if drag.isEnabled != new.windows.dragSnap.isEnabled { drag.isEnabled = new.windows.dragSnap.isEnabled }
+            let buttons = WindowButtonEngine.shared
+            buttons.actions = new.windows.windowButtons.actions
+            buttons.excludedBundleIDs = Set(new.windows.windowButtons.excludedApps)
+            if buttons.isEnabled != new.windows.windowButtons.isEnabled { buttons.isEnabled = new.windows.windowButtons.isEnabled }
             let dragMove = ModifierDragEngine.shared
             dragMove.modifiers = new.windows.modifierDrag.modifiers.modifiers
             dragMove.raisesWindow = new.windows.modifierDrag.raisesWindow

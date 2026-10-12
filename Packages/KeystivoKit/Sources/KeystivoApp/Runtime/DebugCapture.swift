@@ -262,4 +262,65 @@ struct MonitorStyleGallery: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
+/// Developer aid: drives a separate engine (not the shared one, no event tap) with
+/// synthesized-but-unposted mouse events on a throwaway target app's buttons.
+enum WindowButtonSelfTest {
+    static func run(bundleID: String, output: URL) async {
+        var log: [String] = []
+        defer { try? log.joined(separator: "\n").write(to: output, atomically: true, encoding: .utf8) }
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { log.append("FAIL target not running"); return }
+        let window = AXElement.application(pid: app.processIdentifier).windows.first
+        guard let close = window?.element(kAXCloseButtonAttribute), let frame = close.frame else { log.append("FAIL no close button"); return }
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        let engine = WindowButtonEngine()
+        engine.actions = ["close.click": .quitApp]
+        func event(_ type: CGEventType, flags: CGEventFlags = []) -> CGEvent? {
+            let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: type == .rightMouseDown || type == .rightMouseUp ? .right : .left)
+            event?.flags = flags
+            return event
+        }
+        // Unconfigured right-click and ⌘-click keep the usual behavior.
+        if let down = event(.rightMouseDown) { log.append("\(engine.handleTapEvent(down, type: .rightMouseDown) == .pass ? "PASS" : "FAIL") right-click passes") }
+        if let down = event(.leftMouseDown, flags: .maskCommand) { log.append("\(engine.handleTapEvent(down, type: .leftMouseDown) == .pass ? "PASS" : "FAIL") ⌘-click passes") }
+        guard let down = event(.leftMouseDown), let up = event(.leftMouseUp) else { return }
+        let target = engine.target(at: point)
+        log.append("target=\(target.map { "\($0.button) pid=\($0.pid)" } ?? "nil") expected pid=\(app.processIdentifier)")
+        log.append("\(engine.handleTapEvent(down, type: .leftMouseDown) == .consume ? "PASS" : "FAIL") red click taken over")
+        log.append("\(engine.handleTapEvent(up, type: .leftMouseUp) == .consume ? "PASS" : "FAIL") its mouse-up swallowed")
+        for _ in 0..<30 where !app.isTerminated { try? await Task.sleep(for: .milliseconds(100)) }
+        log.append("\(app.isTerminated ? "PASS" : "FAIL") app quit")
+        if !app.isTerminated { app.forceTerminate() }
+    }
+}
+
+/// Developer aid: checks that title bar buttons of visible windows are found the
+/// way the window button engine finds them (no clicks, no pointer movement).
+enum WindowButtonProbe {
+    static func run(output: URL) {
+        var log: [String] = []
+        let all = PointerWindowResolver.onScreenWindows()
+        let windows = all.filter { $0.layer == 0 && $0.pid != getpid() }
+        var seenApps = Set<pid_t>()
+        for window in windows where seenApps.insert(window.pid).inserted {
+            let name = NSRunningApplication(processIdentifier: window.pid)?.localizedName ?? "?"
+            let app = AXElement.application(pid: window.pid)
+            guard let element = app.focusedWindow ?? app.windows.first else { log.append("\(name): no AX window"); continue }
+            for (attribute, expected) in [(kAXCloseButtonAttribute, WindowButton.close), (kAXMinimizeButtonAttribute, .minimize), (kAXZoomButtonAttribute, .zoom)] {
+                guard let button = element.element(attribute), let frame = button.frame else { log.append("\(name) \(expected): no button"); continue }
+                let center = CGPoint(x: frame.midX, y: frame.midY)
+                // Covered by another normal window: a click there wouldn't reach this button anyway.
+                guard PointerWindowResolver.normalWindow(at: center, in: all)?.pid == window.pid else {
+                    log.append("SKIP \(name) \(expected): covered by another window")
+                    continue
+                }
+                // Exactly the engine's decision path, overlays included.
+                let found = WindowButtonEngine.shared.target(at: center)
+                let ok = found?.button == expected && found?.pid == window.pid
+                log.append("\(ok ? "PASS" : "FAIL") \(name) \(expected): found=\(found.map { "\($0.button)" } ?? "nil")")
+            }
+            if seenApps.count >= 5 { break }
+        }
+        try? log.joined(separator: "\n").write(to: output, atomically: true, encoding: .utf8)
+    }
+}
 #endif

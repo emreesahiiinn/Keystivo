@@ -38,6 +38,15 @@ nonisolated public enum PointerWindowResolver {
         return nil
     }
 
+    /// The front-most normal (layer 0) window under `point`, looking through
+    /// anything above the normal layer: click-through overlays (ours or other
+    /// apps') must not hide it. Callers that act on a click confirm the target
+    /// with an Accessibility hit-test. Nil while a menu is open.
+    public static func normalWindow(at point: CGPoint, in entries: [Entry]) -> Entry? {
+        if entries.contains(where: { $0.layer == popUpMenuLayer }) { return nil }
+        return entries.first { $0.layer == 0 && $0.alpha >= 0.01 && $0.bounds.contains(point) }
+    }
+
     /// On-screen windows of the current Space, front to back.
     public static func onScreenWindows() -> [Entry] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }

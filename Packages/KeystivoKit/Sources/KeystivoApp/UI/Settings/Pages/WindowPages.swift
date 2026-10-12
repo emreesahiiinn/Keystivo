@@ -122,6 +122,32 @@ struct WindowsPage: View {
                 Text(L("dragSnap.footer")).font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Toggle(L("windowButtons.enabled"), isOn: $runtime.config.windows.windowButtons.isEnabled)
+                ForEach(WindowButton.allCases, id: \.self) { button in
+                    WindowButtonRow(button: button, actions: $runtime.config.windows.windowButtons.actions)
+                }
+                .disabled(!runtime.config.windows.windowButtons.isEnabled)
+                HStack {
+                    Button(L("windowButtons.quickPreset")) {
+                        runtime.config.windows.windowButtons.actions = WindowButtonSettings.quickPreset
+                        runtime.config.windows.windowButtons.isEnabled = true
+                    }
+                    Button(L("windowButtons.reset")) { runtime.config.windows.windowButtons.actions = [:] }
+                        .disabled(runtime.config.windows.windowButtons.actions.isEmpty)
+                    Spacer()
+                }
+                .controlSize(.small)
+                VStack(alignment: .leading) {
+                    Text(L("windowButtons.excluded"))
+                    AppListEditor(bundleIDs: $runtime.config.windows.windowButtons.excludedApps)
+                }
+                .disabled(!runtime.config.windows.windowButtons.isEnabled)
+            } header: {
+                Text(L("windowButtons.title"))
+            } footer: {
+                Text(L("windowButtons.footer")).font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle(L("modifierDrag.enabled"), isOn: $runtime.config.windows.modifierDrag.isEnabled)
                 Picker(L("modifierDrag.keys"), selection: $runtime.config.windows.modifierDrag.modifiers) {
                     ForEach(ModifierChoice.allCases, id: \.self) { Text($0.symbols).tag($0) }
@@ -469,5 +495,49 @@ private struct WindowHistoryList: View {
                 Button(L("action.windows.undo")) { WindowManager.shared.undoLastMove() }
             }
         }
+    }
+}
+
+
+/// One title bar button: what a click and a right-click do.
+private struct WindowButtonRow: View {
+    let button: WindowButton
+    @Binding var actions: [String: WindowButtonAction]
+
+    private var color: Color {
+        switch button {
+        case .close: Color(red: 1, green: 0.37, blue: 0.34)
+        case .minimize: Color(red: 1, green: 0.74, blue: 0.18)
+        case .zoom: Color(red: 0.16, green: 0.79, blue: 0.25)
+        }
+    }
+
+    private func binding(rightClick: Bool) -> Binding<WindowButtonAction> {
+        let key = WindowButtonEngine.key(button, rightClick: rightClick)
+        return Binding(get: { actions[key] ?? .standard }, set: { actions[key] = $0 == .standard ? nil : $0 })
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(color).frame(width: 13, height: 13)
+                .overlay(Circle().strokeBorder(Color.black.opacity(0.15), lineWidth: 0.5))
+            Text(L("windowButtons.button.\(button.rawValue)")).frame(width: 90, alignment: .leading)
+            Spacer()
+            Text(L("windowButtons.click")).foregroundStyle(.secondary).font(.caption)
+            actionPicker(rightClick: false)
+            Text(L("windowButtons.rightClick")).foregroundStyle(.secondary).font(.caption).padding(.leading, 6)
+            actionPicker(rightClick: true)
+        }
+    }
+
+    private func actionPicker(rightClick: Bool) -> some View {
+        Picker("", selection: binding(rightClick: rightClick)) {
+            ForEach(WindowButtonAction.allCases, id: \.self) { action in
+                Text(L(action == .standard ? (rightClick ? "windowButtons.action.nothing" : "windowButtons.action.standard") : action.titleKey)).tag(action)
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
+        .controlSize(.small)
     }
 }

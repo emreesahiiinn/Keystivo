@@ -131,10 +131,24 @@ nonisolated struct WindowSettings: Codable, Hashable, Sendable {
     var dragSnap = DragSnapSettings()
     var focusFollowsMouse = FocusFollowsMouseSettings()
     var modifierDrag = ModifierDragSettings()
+    var windowButtons = WindowButtonSettings()
     /// Repeating ← / → half at the screen edge continues onto the next display.
     var repeatMovesAcrossDisplays = false
     /// A snapped window gets its earlier size back when dragged away.
     var restoresSizeOnDrag = true
+}
+
+/// Custom actions for the red, yellow and green title bar buttons.
+nonisolated struct WindowButtonSettings: Codable, Hashable, Sendable {
+    var isEnabled = false
+    /// "close.click", "zoom.rightClick"… → action; missing means macOS's own.
+    var actions: [String: WindowButtonAction] = [:]
+    var excludedApps: [String] = []
+
+    /// Red quits the app, yellow fills the screen, green minimizes.
+    static let quickPreset: [String: WindowButtonAction] = [
+        "close.click": .quitApp, "minimize.click": .maximize, "zoom.click": .minimize,
+    ]
 }
 
 /// Hold modifiers and drag anywhere in a window to move it, right-drag to resize.
