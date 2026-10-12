@@ -45,6 +45,7 @@ final class HintsController: EventTapHandler {
     private var overlays: [OverlayWindow] = []
     private var matcher: HintMatcher?
     private var isActive = false
+    var isRunning: Bool { isActive }
     private var mode: HintMode = .click
     private var isCollecting = false
 

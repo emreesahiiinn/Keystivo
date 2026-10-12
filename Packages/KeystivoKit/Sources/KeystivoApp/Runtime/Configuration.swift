@@ -79,6 +79,15 @@ nonisolated struct WindowSettings: Codable, Hashable, Sendable {
     var layouts: [WindowLayout] = []
     var rules: [AppWindowRule] = []
     var dragSnap = DragSnapSettings()
+    var focusFollowsMouse = FocusFollowsMouseSettings()
+}
+
+/// The window under the pointer becomes active once the pointer rests on it.
+nonisolated struct FocusFollowsMouseSettings: Codable, Hashable, Sendable {
+    var isEnabled = false
+    /// Seconds the pointer must rest on a window.
+    var delay: Double = 0.2
+    var excludedApps: [String] = []
 }
 
 /// Drag a window to an edge or corner to snap it (Magnet-style).

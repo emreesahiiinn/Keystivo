@@ -10242,6 +10242,83 @@
         }
       }
     },
+    "action.windows.toggleFocusFollowsMouse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokus folgt Maus ein/aus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toggle Focus Follows Mouse"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar/desactivar el foco sigue al ratón"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activer/désactiver le focus suit la souris"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva/disattiva il focus segue il mouse"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカスがマウスに追従を切り替え"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마우스를 따라 포커스 켜기/끄기"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativar/Desativar Foco Segue o Mouse"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вкл./выкл. фокус за курсором"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odak Fareyi Takip Etsin Aç/Kapat"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换焦点跟随鼠标"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換焦點跟隨滑鼠"
+          }
+        }
+      }
+    },
     "action.windows.undo" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -44503,6 +44580,545 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "專注模式已關閉"
+          }
+        }
+      }
+    },
+    "focusFollows.delay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verzögerung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delay"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retardo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Délai"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ritardo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待機時間"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지연 시간"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atraso"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Задержка"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bekleme süresi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "延迟"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "延遲"
+          }
+        }
+      }
+    },
+    "focusFollows.enabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fenster unter dem Zeiger aktivieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activate the window under the pointer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar la ventana bajo el puntero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activer la fenêtre sous le pointeur"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva la finestra sotto il puntatore"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポインタの下のウインドウをアクティブにする"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "포인터 아래의 윈도우 활성화"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativar a janela sob o ponteiro"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активировать окно под курсором"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fare üzerindeki pencereyi etkinleştir"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "激活指针下方的窗口"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟用指標下方的視窗"
+          }
+        }
+      }
+    },
+    "focusFollows.excluded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fenster dieser Apps nie aktivieren:"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never activate windows of:"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No activar nunca las ventanas de:"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne jamais activer les fenêtres de :"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non attivare mai le finestre di:"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次のアプリのウインドウはアクティブにしない："
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다음 앱의 윈도우는 활성화하지 않음:"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nunca ativar janelas de:"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Никогда не активировать окна приложений:"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Şu uygulamaların pencerelerini etkinleştirme:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从不激活以下应用的窗口："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "永不啟用以下 App 的視窗："
+          }
+        }
+      }
+    },
+    "focusFollows.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruht der Zeiger auf einem anderen Fenster, kommt dieses nach vorne und wird aktiv. Halte beim Bewegen des Zeigers ⌘, ⌥, ⌃ oder ⇧ gedrückt, um im aktuellen Fenster zu bleiben. Bei geöffnetem Menü, beim Ziehen sowie über dem Dock und der Menüleiste ändert sich nichts."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the pointer rests on another window, that window comes to the front and becomes active. Hold ⌘, ⌥, ⌃ or ⇧ while moving the pointer to keep the current window. Nothing changes while a menu is open, while dragging, or over the Dock and the menu bar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuando el puntero se detiene sobre otra ventana, esta pasa al frente y se activa. Mantén pulsada ⌘, ⌥, ⌃ o ⇧ al mover el puntero para quedarte en la ventana actual. No cambia nada con un menú abierto, al arrastrar ni sobre el Dock y la barra de menús."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lorsque le pointeur s'arrête sur une autre fenêtre, celle-ci passe au premier plan et devient active. Maintenez ⌘, ⌥, ⌃ ou ⇧ en déplaçant le pointeur pour rester sur la fenêtre actuelle. Rien ne change lorsqu'un menu est ouvert, pendant un glisser-déposer, ni au-dessus du Dock et de la barre des menus."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quando il puntatore si ferma su un'altra finestra, questa passa in primo piano e diventa attiva. Tieni premuto ⌘, ⌥, ⌃ o ⇧ mentre sposti il puntatore per restare sulla finestra attuale. Non cambia nulla con un menu aperto, durante il trascinamento o sopra il Dock e la barra dei menu."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポインタが別のウインドウの上で止まると、そのウインドウが最前面に移動してアクティブになります。現在のウインドウのままにするには、ポインタを動かすときに ⌘、⌥、⌃、⇧ のいずれかを押したままにします。メニューが開いているとき、ドラッグ中、Dock やメニューバーの上では切り替わりません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "포인터가 다른 윈도우 위에 머무르면 해당 윈도우가 맨 앞으로 오고 활성화됩니다. 현재 윈도우를 유지하려면 포인터를 움직이는 동안 ⌘, ⌥, ⌃ 또는 ⇧ 키를 누르고 있으십시오. 메뉴가 열려 있거나 드래그하는 중이거나 Dock 및 메뉴 막대 위에서는 바뀌지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quando o ponteiro para sobre outra janela, ela vem para a frente e fica ativa. Mantenha ⌘, ⌥, ⌃ ou ⇧ pressionada ao mover o ponteiro para continuar na janela atual. Nada muda com um menu aberto, ao arrastar ou sobre o Dock e a barra de menus."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Когда курсор останавливается на другом окне, оно выходит на передний план и становится активным. Чтобы остаться в текущем окне, удерживайте ⌘, ⌥, ⌃ или ⇧ при перемещении курсора. Ничего не меняется, пока открыто меню, во время перетаскивания и над Dock и строкой меню."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fare başka bir pencerenin üzerinde durduğunda o pencere öne gelir ve etkin olur. Mevcut pencerede kalmak için fareyi hareket ettirirken ⌘, ⌥, ⌃ veya ⇧ tuşunu basılı tutun. Bir menü açıkken, sürükleme sırasında ve Dock ile menü çubuğunun üzerinde hiçbir şey değişmez."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当指针停留在另一个窗口上时，该窗口会移到最前面并成为活跃窗口。移动指针时按住 ⌘、⌥、⌃ 或 ⇧ 可保持当前窗口。菜单打开时、拖移时以及指针位于程序坞和菜单栏上方时不会切换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當指標停留在另一個視窗上時，該視窗會移到最前方並成為使用中視窗。移動指標時按住 ⌘、⌥、⌃ 或 ⇧ 可保留目前的視窗。選單開啟時、拖移時，以及指標位於 Dock 和選單列上方時不會切換。"
+          }
+        }
+      }
+    },
+    "focusFollows.off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokus folgt Maus aus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus follows mouse off"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El foco sigue al ratón: desactivado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le focus suit la souris : désactivé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il focus segue il mouse: disattivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカスのマウス追従：オフ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마우스를 따라 포커스 끔"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foco segue o mouse desativado"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фокус за курсором выключен"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odak fareyi takip etmiyor"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦点跟随鼠标已关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦點跟隨滑鼠已關閉"
+          }
+        }
+      }
+    },
+    "focusFollows.on" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokus folgt Maus ein"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus follows mouse on"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El foco sigue al ratón: activado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le focus suit la souris : activé"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il focus segue il mouse: attivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカスのマウス追従：オン"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마우스를 따라 포커스 켬"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foco segue o mouse ativado"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фокус за курсором включён"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odak fareyi takip ediyor"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦点跟随鼠标已开启"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦點跟隨滑鼠已開啟"
+          }
+        }
+      }
+    },
+    "focusFollows.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fokus folgt Maus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus Follows Mouse"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El foco sigue al ratón"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le focus suit la souris"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il focus segue il mouse"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーカスがマウスに追従"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마우스를 따라 포커스"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foco Segue o Mouse"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фокус следует за курсором"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odak Fareyi Takip Etsin"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦点跟随鼠标"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "焦點跟隨滑鼠"
           }
         }
       }

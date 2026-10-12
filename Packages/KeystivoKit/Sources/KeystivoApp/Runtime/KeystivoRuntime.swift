@@ -114,6 +114,11 @@ public final class KeystivoRuntime {
         EventTapManager.shared.add(BrightnessKeyHandler.shared)
         _ = linkRouting
         _ = dragSnapOverlay
+        // Focus follows mouse pauses while our own modal UI is on screen.
+        FocusFollowsMouse.shared.isSuspended = { [unowned self] in
+            launcher.isVisible || switcher.isVisible || hints.isRunning
+        }
+        EventTapManager.shared.add(FocusFollowsMouse.shared)
         EventTapManager.shared.add(ScrollEngine.shared)
         EventTapManager.shared.add(MouseButtonEngine.shared)
         EventTapManager.shared.add(HyperKeyEngine.shared)
@@ -165,6 +170,13 @@ public final class KeystivoRuntime {
                 if let row = UserDefaults.standard.object(forKey: "KSRightClickRow") as? String, let index = Int(row) {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.launcher.debugRightClickRow(index) }
                 }
+            }
+        }
+        // `-KSTestFocusFollows /path/result.txt`: moves the pointer between two apps' windows.
+        if let output = UserDefaults.standard.string(forKey: "KSTestFocusFollows") {
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await FocusFollowsMouseSelfTest.run(output: URL(fileURLWithPath: output))
             }
         }
         if UserDefaults.standard.bool(forKey: "KSShowSwitcher") {
@@ -383,6 +395,10 @@ public final class KeystivoRuntime {
             drag.excludedBundleIDs = Set(new.windows.dragSnap.excludedApps)
             drag.gap = new.windows.gap
             if drag.isEnabled != new.windows.dragSnap.isEnabled { drag.isEnabled = new.windows.dragSnap.isEnabled }
+            let follow = FocusFollowsMouse.shared
+            follow.delay = new.windows.focusFollowsMouse.delay
+            follow.excludedBundleIDs = Set(new.windows.focusFollowsMouse.excludedApps)
+            if follow.isEnabled != new.windows.focusFollowsMouse.isEnabled { follow.isEnabled = new.windows.focusFollowsMouse.isEnabled }
             let manager = WindowManager.shared
             manager.gap = new.windows.gap
             manager.cyclesOnRepeat = new.windows.cyclesOnRepeat

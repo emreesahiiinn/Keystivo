@@ -132,6 +132,11 @@ extension BuiltinActions {
             runtime.config.windows.dragSnap.isEnabled.toggle()
             runtime.hud.show(symbol: "rectangle.and.hand.point.up.left", text: L(runtime.config.windows.dragSnap.isEnabled ? "dragSnap.on" : "dragSnap.off"))
         }
+        register("windows.toggleFocusFollowsMouse", "cursorarrow.and.square.on.square.dashed", .windows, keywords: ["focus", "follows", "mouse", "hover", "autoraise", "raise"]) { _, _ in
+            runtime.config.windows.focusFollowsMouse.isEnabled.toggle()
+            runtime.hud.show(symbol: "cursorarrow.and.square.on.square.dashed",
+                             text: L(runtime.config.windows.focusFollowsMouse.isEnabled ? "focusFollows.on" : "focusFollows.off"))
+        }
         register("input.toggleScrollReverse", "arrow.up.arrow.down", .input, keywords: ["scroll", "reverse", "mouse", "natural"]) { _, _ in
             runtime.config.input.scroll.isEnabled.toggle()
         }

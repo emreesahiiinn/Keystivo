@@ -2,6 +2,7 @@
 import AppKit
 import KeystivoAccessibility
 import KeystivoCore
+import KeystivoWindows
 @preconcurrency import ScreenCaptureKit
 
 /// Developer aid: captures another app's largest on-screen window to a PNG.
@@ -69,6 +70,87 @@ enum DebugCapture {
         } catch {
             Log.logger("Debug").notice("capture failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+}
+/// Developer aid: end-to-end check of focus follows mouse with real pointer
+/// events. Enables the engine in memory only (the configuration is untouched)
+/// and puts the pointer and the active app back afterwards.
+enum FocusFollowsMouseSelfTest {
+    static func run(output: URL) async {
+        var log: [String] = []
+        func note(_ line: String) { log.append(line) }
+        let engine = FocusFollowsMouse.shared
+        let originalPoint = CGEvent(source: nil)?.location ?? .zero
+        let originalApp = NSWorkspace.shared.frontmostApplication
+        engine.delay = 0.2
+        engine.isEnabled = true
+        defer {
+            engine.isEnabled = false
+            try? log.joined(separator: "\n").write(to: output, atomically: true, encoding: .utf8)
+        }
+
+        let windows = PointerWindowResolver.onScreenWindows()
+        let passThrough = FocusFollowsMouse.ownPassThroughWindows()
+        let own = getpid()
+        // Two windows of different apps, each with a visible spot the pointer can rest on.
+        func visibleSpot(of window: PointerWindowResolver.Entry) -> CGPoint? {
+            for fy in stride(from: 0.2, through: 0.8, by: 0.15) {
+                for fx in stride(from: 0.2, through: 0.8, by: 0.15) {
+                    let point = CGPoint(x: window.bounds.minX + window.bounds.width * fx, y: window.bounds.minY + window.bounds.height * fy)
+                    if PointerWindowResolver.window(at: point, in: windows, passThrough: passThrough)?.id == window.id { return point }
+                }
+            }
+            return nil
+        }
+        let candidates = windows.filter { $0.layer == 0 && $0.pid != own && $0.bounds.width > 200 && $0.bounds.height > 150 }
+            .compactMap { window in visibleSpot(of: window).map { (window, $0) } }
+        guard let first = candidates.first, let second = candidates.first(where: { $0.0.pid != first.0.pid }) else {
+            note("SKIP: need visible windows of two different apps (found \(candidates.count))")
+            return
+        }
+        func app(_ pid: pid_t) -> String { NSRunningApplication(processIdentifier: pid)?.localizedName ?? "\(pid)" }
+        func frontmost() -> pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+        func glide(to point: CGPoint, flags: CGEventFlags = []) async {
+            let start = CGEvent(source: nil)?.location ?? point
+            for step in 1...12 {
+                let t = CGFloat(step) / 12
+                let p = CGPoint(x: start.x + (point.x - start.x) * t, y: start.y + (point.y - start.y) * t)
+                let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)
+                event?.flags = flags
+                event?.post(tap: .cghidEventTap)
+                try? await Task.sleep(for: .milliseconds(12))
+            }
+        }
+        note("A = \(app(first.0.pid)) window \(first.0.id), B = \(app(second.0.pid)) window \(second.0.id)")
+
+        // 1. Resting on A activates A.
+        await glide(to: first.1)
+        try? await Task.sleep(for: .milliseconds(600))
+        note((frontmost() == first.0.pid ? "PASS" : "FAIL") + " rest on A activates A (frontmost: \(app(frontmost() ?? 0)))")
+
+        // 2. Resting on B activates B.
+        await glide(to: second.1)
+        try? await Task.sleep(for: .milliseconds(600))
+        note((frontmost() == second.0.pid ? "PASS" : "FAIL") + " rest on B activates B (frontmost: \(app(frontmost() ?? 0)))")
+
+        // 3. Switching away by other means, then nudging the pointer inside B, keeps the switch.
+        WindowFocus.activate(pid: first.0.pid)
+        try? await Task.sleep(for: .milliseconds(400))
+        await glide(to: CGPoint(x: second.1.x + 12, y: second.1.y + 8))
+        try? await Task.sleep(for: .milliseconds(600))
+        note((frontmost() == first.0.pid ? "PASS" : "FAIL") + " nudging inside B keeps A active (frontmost: \(app(frontmost() ?? 0)))")
+
+        // 4. Holding a modifier while entering another window keeps the current one.
+        engine.isEnabled = false
+        engine.isEnabled = true
+        await glide(to: CGPoint(x: second.1.x - 10, y: second.1.y - 10), flags: .maskShift)
+        try? await Task.sleep(for: .milliseconds(600))
+        note((frontmost() == first.0.pid ? "PASS" : "FAIL") + " holding ⇧ keeps A active (frontmost: \(app(frontmost() ?? 0)))")
+
+        // Restore.
+        engine.isEnabled = false
+        await glide(to: originalPoint)
+        if let originalApp { WindowFocus.activate(pid: originalApp.processIdentifier) }
     }
 }
 #endif

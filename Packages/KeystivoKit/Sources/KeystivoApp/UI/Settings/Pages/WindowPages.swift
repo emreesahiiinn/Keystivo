@@ -104,6 +104,29 @@ struct WindowsPage: View {
             } footer: {
                 Text(L("dragSnap.footer")).font(.caption).foregroundStyle(.secondary)
             }
+            Section {
+                Toggle(L("focusFollows.enabled"), isOn: $runtime.config.windows.focusFollowsMouse.isEnabled)
+                LabeledContent(L("focusFollows.delay")) {
+                    HStack {
+                        Slider(value: $runtime.config.windows.focusFollowsMouse.delay, in: 0.05...1, step: 0.05).frame(width: 220)
+                        Text(Measurement(value: runtime.config.windows.focusFollowsMouse.delay, unit: UnitDuration.seconds)
+                            .formatted(.measurement(width: .abbreviated, numberFormatStyle: .number.precision(.fractionLength(2))).locale(Localizer.shared.locale)))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 56, alignment: .trailing)
+                    }
+                }
+                .disabled(!runtime.config.windows.focusFollowsMouse.isEnabled)
+                VStack(alignment: .leading) {
+                    Text(L("focusFollows.excluded"))
+                    AppListEditor(bundleIDs: $runtime.config.windows.focusFollowsMouse.excludedApps)
+                }
+                .disabled(!runtime.config.windows.focusFollowsMouse.isEnabled)
+            } header: {
+                Text(L("focusFollows.title"))
+            } footer: {
+                Text(L("focusFollows.footer")).font(.caption).foregroundStyle(.secondary)
+            }
             Section(L("windowsSettings.behavior")) {
                 LabeledContent(L("windowsSettings.gap", Int(runtime.config.windows.gap))) {
                     Slider(value: $runtime.config.windows.gap, in: 0...40, step: 2).frame(width: 220)
@@ -258,7 +281,7 @@ struct DockPage: View {
                     HStack {
                         Slider(value: $runtime.config.dock.previewDelay, in: 0...1, step: 0.05).frame(width: 220)
                         Text(Measurement(value: runtime.config.dock.previewDelay, unit: UnitDuration.seconds)
-                            .formatted(.measurement(width: .abbreviated, numberFormatStyle: .number.precision(.fractionLength(2)))))
+                            .formatted(.measurement(width: .abbreviated, numberFormatStyle: .number.precision(.fractionLength(2))).locale(Localizer.shared.locale)))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .frame(width: 56, alignment: .trailing)
