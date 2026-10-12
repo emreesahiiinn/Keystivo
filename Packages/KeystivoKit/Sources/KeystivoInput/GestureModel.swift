@@ -57,7 +57,7 @@ nonisolated public struct TrackpadGesture: Codable, Hashable, Sendable {
     }
 
     public var displayString: String {
-        var text = modifiers.symbols
+        var text = modifiers.isEmpty ? "" : modifiers.symbols + " "
         switch kind {
         case .tap: text += L("gesture.display.tap", fingers)
         case .doubleTap: text += L("gesture.display.doubleTap", fingers)

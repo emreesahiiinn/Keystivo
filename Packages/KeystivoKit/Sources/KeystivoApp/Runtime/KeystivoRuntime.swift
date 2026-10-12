@@ -54,6 +54,21 @@ public final class KeystivoRuntime {
     @ObservationIgnored private(set) lazy var automationSources = AutomationSources(runtime: self)
     @ObservationIgnored private(set) lazy var quickAccess = QuickAccessOverlay(runtime: self)
     @ObservationIgnored private(set) lazy var menuBarManager = MenuBarManager()
+    /// The Keystivo menu bar item and its control center panel.
+    @ObservationIgnored private(set) lazy var controlCenter = MenuBarPanelController(
+        autosaveName: "KeystivoControlCenter", width: 332, accessibilityLabel: "Keystivo",
+        symbol: { "command.square.fill" },
+        content: { [unowned self] in AnyView(ControlCenterView(runtime: self)) }
+    )
+    /// Optional menu bar item with the sound mixer.
+    @ObservationIgnored private(set) lazy var mixerItem = MenuBarPanelController(
+        autosaveName: "KeystivoMixer", width: 320, accessibilityLabel: L("cc.mixerTitle"),
+        symbol: { KeystivoRuntime.mixerSymbol() },
+        onShow: { AppAudioController.shared.refresh() },
+        content: { [unowned self] in AnyView(MixerPanelView(runtime: self)) }
+    )
+    @ObservationIgnored private var commandCommaMonitor: Any?
+    @ObservationIgnored private(set) lazy var desktopWidgets = DesktopWidgetsController(runtime: self)
     @ObservationIgnored private(set) lazy var systemMonitorItem = SystemMonitorStatusItem()
     @ObservationIgnored private(set) lazy var shelf = ShelfController()
     @ObservationIgnored private(set) lazy var screenTools = ScreenToolsController(runtime: self)
@@ -94,6 +109,8 @@ public final class KeystivoRuntime {
 
         BuiltinActions.registerAll(runtime: self)
         wireModuleCallbacks()
+        installCommandComma()
+        observeMixerIcon()
 
         // Accessibility-dependent services (re)start when permission changes.
         PermissionCenter.shared.onChange = { [weak self] old, new in
@@ -156,6 +173,32 @@ public final class KeystivoRuntime {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.launcher.show(mode: .root) }
         }
         #if DEBUG
+        // `-KSDemoWidgets YES`: one of each widget on screen, in memory only (settings untouched).
+        if UserDefaults.standard.bool(forKey: "KSDemoWidgets") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                var demo = WidgetSettings()
+                demo.alwaysOnTop = true
+                let visible = (NSScreen.screens.first ?? NSScreen.main)?.visibleFrame ?? .zero
+                var x = visible.minX + 24
+                var y = visible.maxY - 24
+                for kind in [WidgetKind.clock, .weather, .calendar, .system, .timer, .battery, .worldClock, .countdown] {
+                    var instance = WidgetInstance(kind: kind)
+                    let size = instance.size.points
+                    if y - size.height < visible.minY + 24 { y = visible.maxY - 24; x += 360 }
+                    instance.origin = CGPoint(x: x, y: y - size.height)
+                    y -= size.height + 16
+                    demo.instances.append(instance)
+                }
+                self?.desktopWidgets.apply(demo)
+            }
+        }
+        // `-KSShowControlCenter YES` / `-KSShowMixerPanel YES`: open the menu bar panels.
+        if UserDefaults.standard.bool(forKey: "KSShowControlCenter") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.controlCenter.show() }
+        }
+        if UserDefaults.standard.bool(forKey: "KSShowMixerPanel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.mixerItem.show() }
+        }
         // `--args -KSShowSettings displays` / `-KSAnnotateImage /path/to/image.png`
         if let page = UserDefaults.standard.string(forKey: "KSShowSettings"), let section = SettingsSection(rawValue: page) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.windowsUI.showSettings(section: section) }
@@ -492,6 +535,8 @@ public final class KeystivoRuntime {
             if dragMove.isEnabled != new.windows.modifierDrag.isEnabled { dragMove.isEnabled = new.windows.modifierDrag.isEnabled }
             let follow = FocusFollowsMouse.shared
             follow.delay = new.windows.focusFollowsMouse.delay
+            follow.displayChangeDelay = new.windows.focusFollowsMouse.displayChangeDelay
+            follow.focusesDisplayOnEnter = new.windows.focusFollowsMouse.focusesDisplayOnEnter
             follow.excludedBundleIDs = Set(new.windows.focusFollowsMouse.excludedApps)
             if follow.isEnabled != new.windows.focusFollowsMouse.isEnabled { follow.isEnabled = new.windows.focusFollowsMouse.isEnabled }
             let manager = WindowManager.shared
@@ -560,11 +605,21 @@ public final class KeystivoRuntime {
         if changed(\.menuBar) {
             menuBarManager.apply(new.menuBar)
             systemMonitorItem.apply(new.menuBar)
+            mixerItem.setInstalled(new.menuBar.showsMixerItem)
+        }
+        if changed(\.general.showsMenuBarIcon) {
+            controlCenter.setInstalled(new.general.showsMenuBarIcon)
         }
         if changed(\.files) {
             FolderRuleEngine.shared.rules = new.files.folderRules
             if FolderRuleEngine.shared.isEnabled != new.files.rulesEnabled { FolderRuleEngine.shared.isEnabled = new.files.rulesEnabled }
             shelf.apply(showOnDrag: new.files.shelfOnDrag)
+        }
+        if changed(\.widgets) {
+            desktopWidgets.apply(new.widgets)
+        }
+        if changed(\.tools.keystivoSaver) {
+            screenSavers.apply(new.tools.keystivoSaver)
         }
         if changed(\.presentation) {
             presentation.apply(new.presentation)
@@ -600,6 +655,42 @@ public final class KeystivoRuntime {
             if !enabled, service.status == .enabled { try service.unregister() }
         } catch {
             DiagnosticsCenter.shared.record(error, module: "App", context: L("general.launchAtLogin"))
+        }
+    }
+
+    /// ⌘, opens Settings from any Keystivo panel (by key position too, so ⌘Ö
+    /// on a Turkish keyboard works like everywhere else on the Mac).
+    private func installCommandComma() {
+        guard commandCommaMonitor == nil else { return }
+        commandCommaMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
+            guard modifiers == .command, event.keyCode == 43 || event.charactersIgnoringModifiers == ",",
+                  let self, !self.windowsUI.isSettingsKey else { return event }
+            self.controlCenter.close()
+            self.mixerItem.close()
+            self.windowsUI.showSettingsAtLastSection()
+            return nil
+        }
+    }
+
+    /// The mixer item's symbol follows the output volume.
+    static func mixerSymbol() -> String {
+        let devices = AudioDeviceManager.shared
+        if devices.outputMuted || devices.outputVolume == 0 { return "speaker.slash" }
+        return devices.outputVolume < 0.34 ? "speaker.wave.1" : devices.outputVolume < 0.67 ? "speaker.wave.2" : "speaker.wave.3"
+    }
+
+    private func observeMixerIcon() {
+        withObservationTracking {
+            _ = AudioDeviceManager.shared.outputVolume
+            _ = AudioDeviceManager.shared.outputMuted
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.mixerItem.refreshIcon()
+                    self?.observeMixerIcon()
+                }
+            }
         }
     }
 

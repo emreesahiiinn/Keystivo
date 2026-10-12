@@ -36,6 +36,7 @@ struct ScreenSaversPage: View {
             } footer: {
                 Text(L("screenSavers.footer")).font(.caption).foregroundStyle(.secondary)
             }
+            keystivoSaver
             Section(L("screenSavers.designs")) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 14)], spacing: 16) {
                     ForEach(SaverStyle.allCases) { style in
@@ -47,6 +48,41 @@ struct ScreenSaversPage: View {
         }
         .formStyle(.grouped)
         .onAppear { savers.refresh() }
+    }
+
+    private var saver: Binding<KeystivoSaverSettings> { $runtime.config.tools.keystivoSaver }
+
+    /// Keystivo runs the saver itself: the only way to see the desktop through it.
+    private var keystivoSaver: some View {
+        let settings = runtime.config.tools.keystivoSaver
+        return Section {
+            Toggle(L("screenSavers.keystivo.idle"), isOn: saver.startsWhenIdle)
+            Picker(L("screenSavers.keystivo.after"), selection: saver.idleMinutes) {
+                ForEach([1, 2, 3, 5, 10, 15, 30], id: \.self) { minutes in
+                    Text(Duration.seconds(minutes * 60).formatted(.units(allowed: [.minutes], width: .wide))).tag(minutes)
+                }
+            }
+            .disabled(!settings.startsWhenIdle)
+            Picker(L("screenSavers.keystivo.design"), selection: saver.style) {
+                ForEach(SaverStyle.allCases) { Label(L($0.titleKey), systemImage: $0.symbol).tag($0) }
+            }
+            Picker(L("screenSavers.keystivo.backdrop"), selection: saver.backdrop) {
+                ForEach(SaverBackdrop.allCases) { Text(L($0.titleKey)).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .disabled(!settings.style.supportsBackdrop)
+            if !settings.style.supportsBackdrop {
+                Text(L("screenSavers.keystivo.ownBackground")).font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                LabeledContent(L("action.screensaver.keystivo")) { ActionShortcutField(runtime: runtime, actionID: "screensaver.keystivo") }
+                Button(L("screenSavers.preview")) { savers.showPreview(settings.style, backdrop: settings.backdrop) }
+            }
+        } header: {
+            Text(L("screenSavers.keystivo.title"))
+        } footer: {
+            Text(L("screenSavers.keystivo.footer")).font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     private var statusLabel: some View {

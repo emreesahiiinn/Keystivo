@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import KeystivoAccessibility
 import KeystivoAudio
 import KeystivoAutomation
@@ -15,277 +16,297 @@ import KeystivoTools
 import KeystivoWindows
 import SwiftUI
 
-/// The menu bar control center ("menü çubuğunda birleşik kontrol merkezi").
+/// The menu bar control center: a glass panel of quick toggles, sound,
+/// display brightness, window layouts and quick actions. Its modules and their
+/// order are chosen in Settings › Menu Bar.
 struct ControlCenterView: View {
     let runtime: KeystivoRuntime
-    @State private var showsMixer = false
+    @Environment(\.dismissPanel) private var dismiss
+    @State private var showsApps = false
+    @State private var darkModeOverride: Bool?
+
+    private var settings: ControlCenterSettings { runtime.config.menuBar.controlCenter }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             header
             if PermissionCenter.shared.missingEssential { permissionBanner }
-            profiles
-            quickToggles
-            Divider()
-            if showsMixer {
-                MixerView(runtime: runtime, compact: true)
-            } else {
-                audioSummary
+            ForEach(settings.modules) { module in
+                moduleView(module)
             }
-            Divider()
-            windowGrid
-            Divider()
-            powerRow
-            if !BrightnessController.shared.targets.isEmpty { brightnessRows }
-            Divider()
-            toolsRow
-            Divider()
-            commandGrid
-            Divider()
             footer
         }
-        .padding(14)
-        .frame(width: 340)
+        .padding(8)
+        #if DEBUG
+        // `-KSTestPanelResize YES`: expands and collapses the sound section a few times.
+        .task {
+            guard UserDefaults.standard.bool(forKey: "KSTestPanelResize") else { return }
+            for step in 0..<7 {
+                try? await Task.sleep(for: .milliseconds(700))
+                withAnimation(.snappy(duration: 0.22)) { showsApps.toggle() }
+                try? await Task.sleep(for: .milliseconds(400))
+                let frame = NSApp.windows.first { $0 is MenuBarPanel }.map { "\(NSStringFromRect($0.frame)) visible=\($0.isVisible)" } ?? "none"
+                Log.logger("Debug").notice("panel resize step \(step) expanded=\(showsApps) \(frame, privacy: .public)")
+            }
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private func moduleView(_ module: ControlCenterModule) -> some View {
+        switch module {
+        case .toggles: if !settings.toggles.isEmpty { toggles }
+        case .widgets: if !runtime.config.widgets.panel.isEmpty { PanelWidgetGrid(runtime: runtime) }
+        case .sound: sound
+        case .displays: if !BrightnessController.shared.targets.isEmpty { displays }
+        case .windows: windows
+        case .actions: if !quickActions.isEmpty { actions }
+        case .power: if PowerMonitor.shared.hasBattery || runtime.config.system.powerProfiles.count > 1 { power }
+        }
+    }
+
+    /// Runs an action after the panel closes, so it acts on the app that was in front.
+    private func run(_ actionID: String) {
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            ActionRegistry.shared.run(ActionInvocation(actionID), source: .menuBar)
+        }
+    }
+
+    private func shortcut(for actionID: String) -> KeyCombo? {
+        runtime.config.hotkeys.first { $0.isEnabled && $0.actions.count == 1 && $0.actions[0].actionID == actionID && $0.appBundleIDs.isEmpty }?.combo
     }
 
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "command.square.fill")
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Keystivo").font(.headline)
-                Text(runtime.profiles.active?.name ?? "").font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 7) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 18, height: 18)
+            Text("Keystivo").font(.system(size: 13, weight: .semibold))
+            if runtime.config.workspace.profiles.count > 1 {
+                CCMenu(title: runtime.profiles.active?.name ?? "") {
+                    ForEach(runtime.config.workspace.profiles) { profile in
+                        Button { runtime.profiles.activate(profile.id) } label: {
+                            Label(profile.name, systemImage: profile.id == runtime.config.workspace.activeProfileID ? "checkmark" : profile.symbolName)
+                        }
+                    }
+                }
+                .help(L("cc.profile"))
             }
             Spacer()
-            Button { runtime.launcher.show(mode: .root) } label: { Image(systemName: "magnifyingglass") }
-                .buttonStyle(.borderless)
-                .help(L("action.launcher.show"))
-            Button { runtime.windowsUI.showSettings() } label: { Image(systemName: "gearshape") }
-                .buttonStyle(.borderless)
-                .help(L("action.app.settings"))
+            CCHeaderButton(symbol: "magnifyingglass", help: L("action.launcher.show")) {
+                dismiss()
+                runtime.launcher.show(mode: .root)
+            }
+            CCHeaderButton(symbol: "slider.horizontal.3", help: L("cc.customize")) {
+                dismiss()
+                runtime.windowsUI.showSettings(section: .menuBar)
+            }
         }
+        .padding(.horizontal, 6)
+        .padding(.top, 3)
+        .padding(.bottom, 1)
     }
 
     private var permissionBanner: some View {
         Button {
+            dismiss()
             runtime.windowsUI.showSettings(section: .diagnostics)
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("cc.permissionTitle")).font(.caption.weight(.semibold))
-                    Text(L("cc.permissionBody")).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                    Text(L("cc.permissionTitle")).font(.system(size: 11.5, weight: .semibold))
+                    Text(L("cc.permissionBody")).font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: CC.cardRadius, style: .continuous).fill(Color.orange.opacity(0.14)))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: Profiles
-
-    private var profiles: some View {
-        HStack(spacing: 6) {
-            ForEach(runtime.config.workspace.profiles) { profile in
-                let active = profile.id == runtime.config.workspace.activeProfileID
-                Button { runtime.profiles.activate(profile.id) } label: {
-                    Label(profile.name, systemImage: profile.symbolName)
-                        .font(.caption.weight(active ? .semibold : .regular))
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(active ? Theme.color(named: profile.colorName).opacity(0.25) : Color.primary.opacity(0.06)))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     // MARK: Toggles
 
-    private var quickToggles: some View {
-        let focus = FocusController.shared
-        let keepAwake = KeepAwakeController.shared
-        let clipboard = ClipboardMonitor.shared
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-            ToggleTile(symbol: "moon.fill", title: L("cc.focus"), isOn: focus.isActive, color: .indigo) { focus.toggle() }
-            ToggleTile(symbol: "cup.and.saucer.fill", title: L("cc.keepAwake"), isOn: keepAwake.mode != .off, color: .brown) { keepAwake.toggle() }
-            ToggleTile(symbol: AudioDeviceManager.shared.inputMuted ? "mic.slash.fill" : "mic.fill", title: L("cc.mic"), isOn: !AudioDeviceManager.shared.inputMuted, color: .red) {
-                AudioDeviceManager.shared.toggleInputMute()
+    private var toggles: some View {
+        CCCard {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 10) {
+                ForEach(settings.toggles) { toggle in
+                    toggleView(toggle)
+                }
             }
-            ToggleTile(symbol: "clipboard.fill", title: L("cc.clipboard"), isOn: !clipboard.isPaused, color: .orange) { clipboard.setPaused(!clipboard.isPaused) }
-            ToggleTile(symbol: "hand.draw.fill", title: L("cc.gestures"), isOn: runtime.config.gestures.trackpadEnabled || runtime.config.gestures.mouseEnabled, color: .mint) {
-                let enable = !(runtime.config.gestures.trackpadEnabled || runtime.config.gestures.mouseEnabled)
-                runtime.config.gestures.trackpadEnabled = enable
-                runtime.config.gestures.mouseEnabled = enable
-            }
-            ToggleTile(symbol: "bolt.fill", title: L("cc.automation"), isOn: runtime.config.automation.isEnabled, color: .yellow) { runtime.config.automation.isEnabled.toggle() }
-            ToggleTile(symbol: "dock.rectangle", title: L("cc.launcherBar"), isOn: runtime.config.dock.launcherBar.isEnabled, color: .blue) { runtime.config.dock.launcherBar.isEnabled.toggle() }
-            ToggleTile(symbol: "text.badge.plus", title: L("cc.snippets"), isOn: runtime.config.snippets.expansionEnabled, color: .teal) { runtime.config.snippets.expansionEnabled.toggle() }
         }
     }
 
-    // MARK: Audio
+    private var isDarkMode: Bool {
+        darkModeOverride ?? (UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark")
+    }
 
-    private var audioSummary: some View {
-        let devices = AudioDeviceManager.shared
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: devices.defaultOutput?.symbolName ?? "speaker.wave.2")
-                Text(devices.defaultOutput?.name ?? "—").font(.caption).lineLimit(1)
-                Spacer()
-                Button(L("cc.mixer")) { withAnimation(.snappy) { showsMixer = true } }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
+    @ViewBuilder
+    private func toggleView(_ toggle: ControlCenterToggle) -> some View {
+        let title = L(toggle.titleKey)
+        switch toggle {
+        case .focus:
+            CCToggle(symbol: "moon.fill", title: title, isOn: FocusController.shared.isActive) { FocusController.shared.toggle() }
+        case .keepAwake:
+            let keepAwake = KeepAwakeController.shared
+            CCToggle(symbol: "cup.and.saucer.fill", title: title, isOn: keepAwake.mode != .off) { keepAwake.toggle() }
+        case .mic:
+            let devices = AudioDeviceManager.shared
+            CCToggle(symbol: devices.inputMuted ? "mic.slash.fill" : "mic.fill", title: title, isOn: !devices.inputMuted) { devices.toggleInputMute() }
+        case .darkMode:
+            CCToggle(symbol: "circle.lefthalf.filled", title: title, isOn: isDarkMode) {
+                darkModeOverride = !isDarkMode
+                ActionRegistry.shared.run(ActionInvocation("system.toggleDarkMode"), source: .menuBar)
             }
-            Slider(value: Binding(get: { Double(devices.outputVolume) }, set: { devices.setOutputVolume(Float($0)) }), in: 0...1)
-                .controlSize(.small)
+        case .clipboard:
+            let clipboard = ClipboardMonitor.shared
+            CCToggle(symbol: "list.clipboard.fill", title: title, isOn: !clipboard.isPaused) { clipboard.setPaused(!clipboard.isPaused) }
+        case .snippets:
+            CCToggle(symbol: "text.badge.plus", title: title, isOn: runtime.config.snippets.expansionEnabled) { runtime.config.snippets.expansionEnabled.toggle() }
+        case .gestures:
+            let isOn = runtime.config.gestures.trackpadEnabled || runtime.config.gestures.mouseEnabled
+            CCToggle(symbol: "hand.draw.fill", title: title, isOn: isOn) {
+                runtime.config.gestures.trackpadEnabled = !isOn
+                runtime.config.gestures.mouseEnabled = !isOn
+            }
+        case .automation:
+            CCToggle(symbol: "bolt.fill", title: title, isOn: runtime.config.automation.isEnabled) { runtime.config.automation.isEnabled.toggle() }
+        case .launcherBar:
+            CCToggle(symbol: "dock.rectangle", title: title, isOn: runtime.config.dock.launcherBar.isEnabled) { runtime.config.dock.launcherBar.isEnabled.toggle() }
+        case .focusFollowsMouse:
+            CCToggle(symbol: "cursorarrow.motionlines", title: title, isOn: runtime.config.windows.focusFollowsMouse.isEnabled) { runtime.config.windows.focusFollowsMouse.isEnabled.toggle() }
+        case .dragSnap:
+            CCToggle(symbol: "rectangle.split.2x1.fill", title: title, isOn: runtime.config.windows.dragSnap.isEnabled) { runtime.config.windows.dragSnap.isEnabled.toggle() }
+        }
+    }
+
+    // MARK: Sound
+
+    private var sound: some View {
+        let devices = AudioDeviceManager.shared
+        return CCCard(L("cc.module.sound")) {
+            CCMenu(title: devices.defaultOutput?.name ?? "—") {
+                ForEach(devices.outputDevices) { device in
+                    Button { try? devices.setDefaultOutput(uid: device.uid) } label: {
+                        Label(device.name, systemImage: device.uid == devices.defaultOutput?.uid ? "checkmark" : device.symbolName)
+                    }
+                }
+            }
+        } content: {
+            HStack(spacing: 6) {
+                CCSlider(value: Binding(get: { devices.outputMuted ? 0 : Double(devices.outputVolume) }, set: {
+                    if devices.outputMuted { devices.toggleOutputMute() }
+                    devices.setOutputVolume(Float($0))
+                }), symbol: volumeSymbol(devices), label: L("cc.module.sound")) { devices.toggleOutputMute() }
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) { showsApps.toggle() }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(showsApps ? 180 : 0))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.primary.opacity(showsApps ? 0.14 : 0.07)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(L("cc.appVolumes"))
+            }
+            if showsApps {
+                AppVolumeList(runtime: runtime, limit: 6)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func volumeSymbol(_ devices: AudioDeviceManager) -> String {
+        if devices.outputMuted || devices.outputVolume == 0 { return "speaker.slash.fill" }
+        return devices.outputVolume < 0.34 ? "speaker.wave.1.fill" : devices.outputVolume < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+    }
+
+    // MARK: Displays
+
+    private var displays: some View {
+        let controller = BrightnessController.shared
+        return CCCard(L("cc.module.displays")) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(controller.targets) { target in
+                    if controller.targets.count > 1 {
+                        Text(target.name).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    CCSlider(value: Binding(get: { target.brightness }, set: { controller.setBrightness($0, for: target.id) }),
+                             symbol: target.brightness < 0.5 ? "sun.min.fill" : "sun.max.fill", label: target.name)
+                }
+            }
         }
     }
 
     // MARK: Windows
 
-    private var windowGrid: some View {
-        let positions: [SnapPosition] = [.leftHalf, .rightHalf, .topHalf, .bottomHalf, .maximize, .center, .firstThird, .lastThird]
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(L("category.windows")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+    private var windows: some View {
+        let positions: [SnapPosition] = [.leftHalf, .rightHalf, .topHalf, .bottomHalf, .firstThird, .lastThird, .center, .maximize]
+        return CCCard(L("cc.module.windows")) {
             HStack(spacing: 4) {
                 ForEach(positions) { position in
-                    Button {
-                        snapPreviousApp(position)
-                    } label: {
-                        Image(systemName: position.symbolName)
-                            .frame(maxWidth: .infinity, minHeight: 24)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
-                    }
-                    .buttonStyle(.plain)
-                    .help(L(position.titleKey))
+                    CCIconButton(symbol: position.symbolName, help: L(position.titleKey)) { run("windows.snap.\(position.rawValue)") }
                 }
             }
         }
     }
 
-    /// The menu bar window is key while open; act on the app that was frontmost.
-    private func snapPreviousApp(_ position: SnapPosition) {
-        NSApp.keyWindow?.close()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            ActionRegistry.shared.run(ActionInvocation("windows.snap.\(position.rawValue)"), source: .menuBar)
+    // MARK: Quick actions
+
+    private var quickActions: [ActionDescriptor] {
+        settings.actions.compactMap { ActionRegistry.shared.descriptors[$0] }
+    }
+
+    private var actions: some View {
+        CCCard(L("cc.module.actions")) {
+            VStack(spacing: 0) {
+                ForEach(quickActions) { descriptor in
+                    CCRow(symbol: descriptor.symbolName, title: L(descriptor.titleKey), shortcut: shortcut(for: descriptor.id)) { run(descriptor.id) }
+                }
+            }
+            .padding(.horizontal, -6)
+            .padding(.bottom, -4)
         }
     }
 
     // MARK: Power
 
-    private var powerRow: some View {
+    private var power: some View {
         let power = PowerMonitor.shared
-        return HStack(spacing: 8) {
-            Image(systemName: power.symbolName)
-            if let level = power.batteryLevel {
-                Text("\(level)%").font(.caption.monospacedDigit())
-                if let minutes = power.minutesRemaining {
-                    Text(L(power.isOnAC ? "cc.untilFull" : "cc.remaining", minutes / 60, minutes % 60))
-                        .font(.caption2).foregroundStyle(.secondary)
+        return CCCard {
+            HStack(spacing: 8) {
+                Image(systemName: power.symbolName).font(.system(size: 13)).foregroundStyle(.secondary)
+                if let level = power.batteryLevel {
+                    Text("\(level)%").font(.system(size: 12, weight: .medium).monospacedDigit())
+                    if let minutes = power.minutesRemaining {
+                        Text(L(power.isOnAC ? "cc.untilFull" : "cc.remaining", minutes / 60, minutes % 60))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(L("cc.onPower")).font(.system(size: 12))
                 }
-            } else {
-                Text(L("cc.onPower")).font(.caption)
-            }
-            if power.isLowPowerMode { Badge(text: L("cc.lowPower"), color: .yellow) }
-            if power.hasBattery, runtime.config.system.chargeLimit.isEnabled {
-                Button { runtime.windowsUI.showSettings(section: .battery) } label: {
+                if power.isLowPowerMode { Badge(text: L("cc.lowPower"), color: .yellow) }
+                if power.hasBattery, runtime.config.system.chargeLimit.isEnabled {
                     Badge(text: runtime.chargeLimiter.isToppingUp ? L("cc.toppingUp") : L("cc.limit", runtime.config.system.chargeLimit.limit), color: .green)
                 }
-                .buttonStyle(.plain)
-                .help(L("settings.page.battery"))
-            }
-            Spacer()
-            Menu {
-                ForEach(runtime.config.system.powerProfiles) { profile in
-                    Button { runtime.applyPowerProfile(profile) } label: {
-                        Label(profile.name, systemImage: runtime.config.system.activePowerProfileID == profile.id ? "checkmark" : profile.symbolName)
+                Spacer(minLength: 4)
+                if runtime.config.system.powerProfiles.count > 1 {
+                    CCMenu(title: runtime.config.system.powerProfiles.first { $0.id == runtime.config.system.activePowerProfileID }?.name ?? L("cc.powerProfile")) {
+                        ForEach(runtime.config.system.powerProfiles) { profile in
+                            Button { runtime.applyPowerProfile(profile) } label: {
+                                Label(profile.name, systemImage: runtime.config.system.activePowerProfileID == profile.id ? "checkmark" : profile.symbolName)
+                            }
+                        }
                     }
                 }
-            } label: {
-                Text(runtime.config.system.powerProfiles.first { $0.id == runtime.config.system.activePowerProfileID }?.name ?? L("cc.powerProfile"))
-                    .font(.caption)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-        }
-    }
-
-    // MARK: Brightness
-
-    private var brightnessRows: some View {
-        let controller = BrightnessController.shared
-        return VStack(spacing: 4) {
-            ForEach(controller.targets) { target in
-                HStack(spacing: 8) {
-                    Image(systemName: target.brightness < 0.5 ? "sun.min" : "sun.max")
-                        .frame(width: 16)
-                        .contentTransition(.symbolEffect(.replace))
-                    Slider(value: Binding(get: { target.brightness }, set: { controller.setBrightness($0, for: target.id) }), in: 0...1)
-                        .controlSize(.small)
-                    if controller.targets.count > 1 {
-                        Text(target.name).font(.caption2).foregroundStyle(.secondary).lineLimit(1).frame(width: 74, alignment: .leading)
-                    }
-                }
-                .help(target.name)
-            }
-        }
-    }
-
-    // MARK: Tools
-
-    private var toolsRow: some View {
-        let tools: [(String, String, String)] = [
-            ("tools.captureText", "text.viewfinder", "cc.tool.ocr"),
-            ("tools.annotate", "pencil.tip.crop.circle", "cc.tool.annotate"),
-            ("tools.recordScreen", ScreenRecorder.shared.isActive ? "stop.circle.fill" : "record.circle", "cc.tool.record"),
-            ("tools.pickColor", "eyedropper", "cc.tool.color"),
-            ("files.toggleShelf", "tray.full", "cc.tool.shelf"),
-            ("files.uninstallApp", "trash.square", "cc.tool.uninstall"),
-        ]
-        return HStack(spacing: 6) {
-            ForEach(tools, id: \.0) { id, symbol, title in
-                Button {
-                    NSApp.keyWindow?.close()
-                    ActionRegistry.shared.run(ActionInvocation(id), source: .menuBar)
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: symbol).font(.system(size: 14))
-                        Text(L(title)).font(.system(size: 9)).lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 40)
-                    .keystivoTileBackground(isOn: false, color: .accentColor, cornerRadius: 8)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    // MARK: Commands
-
-    private var commandGrid: some View {
-        let commands: [SystemCommand] = [.lockScreen, .sleepDisplays, .toggleDarkMode, .showDesktop, .screenSaver, .ejectAll, .toggleHiddenFiles, .emptyTrash]
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-            ForEach(commands) { command in
-                Button {
-                    NSApp.keyWindow?.close()
-                    ActionRegistry.shared.run(ActionInvocation("system.\(command.rawValue)"), source: .menuBar)
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: command.symbolName).font(.system(size: 14))
-                        Text(L(command.titleKey)).font(.system(size: 9)).lineLimit(2).multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-                }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -293,53 +314,232 @@ struct ControlCenterView: View {
     // MARK: Footer
 
     private var footer: some View {
-        HStack {
-            Button(L("action.clipboard.history")) {
-                NSApp.keyWindow?.close()
+        VStack(spacing: 0) {
+            Divider().padding(.horizontal, 6).padding(.bottom, 4)
+            CCRow(symbol: "list.clipboard", title: L("action.clipboard.history"), shortcut: shortcut(for: "clipboard.history")) {
+                dismiss()
                 runtime.launcher.show(mode: .clipboard)
             }
-            .buttonStyle(.borderless)
-            Spacer()
-            Button(L("menu.quit")) { NSApp.terminate(nil) }
-                .buttonStyle(.borderless)
+            CCRow(symbol: "gearshape", title: L("cc.settings"), shortcut: KeyCombo(kVK_ANSI_Comma, .command)) {
+                dismiss()
+                runtime.windowsUI.showSettingsAtLastSection()
+            }
+            CCRow(symbol: "power", title: L("menu.quit"), shortcut: KeyCombo(kVK_ANSI_Q, .command)) { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         }
-        .font(.caption)
     }
 }
 
-private struct ToggleTile: View {
-    let symbol: String
-    let title: String
-    let isOn: Bool
-    let color: Color
-    let action: () -> Void
-    @State private var hovering = false
+/// Widgets placed in the panel: small ones two to a row, others full width.
+private struct PanelWidgetGrid: View {
+    let runtime: KeystivoRuntime
+    private let width: CGFloat = 316
+    private let spacing: CGFloat = 8
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isOn ? .white : .secondary)
-                    .symbolEffect(.bounce, value: isOn)
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(isOn ? AnyShapeStyle(color.gradient) : AnyShapeStyle(Color.primary.opacity(0.08))))
-                    .shadow(color: isOn ? color.opacity(0.45) : .clear, radius: 6, y: 2)
-                    .scaleEffect(hovering ? 1.08 : 1)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.6), value: hovering)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isOn)
-                Text(title)
-                    .font(.system(size: 9))
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: spacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: spacing) {
+                    ForEach(row) { instance in
+                        WidgetView(runtime: runtime, instance: instance)
+                            .padding(12)
+                            .frame(width: cellSize(instance).width, height: cellSize(instance).height)
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.055)))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5))
+                            .contextMenu { WidgetMenu(runtime: runtime, instance: instance) }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private var rows: [[WidgetInstance]] {
+        var rows: [[WidgetInstance]] = []
+        for instance in runtime.config.widgets.panel {
+            if instance.size == .small, let last = rows.last, last.count == 1, last[0].size == .small {
+                rows[rows.count - 1].append(instance)
+            } else {
+                rows.append([instance])
+            }
+        }
+        return rows
+    }
+
+    private func cellSize(_ instance: WidgetInstance) -> CGSize {
+        switch instance.size {
+        case .small: CGSize(width: (width - spacing) / 2, height: (width - spacing) / 2)
+        case .medium: CGSize(width: width, height: 150)
+        case .large: CGSize(width: width, height: width)
+        }
+    }
+}
+
+/// Per-app volume rows for menu bar panels.
+struct AppVolumeList: View {
+    let runtime: KeystivoRuntime
+    var limit = 12
+
+    var body: some View {
+        let apps = AppAudioController.shared
+        VStack(alignment: .leading, spacing: 8) {
+            if !runtime.config.audio.appVolumeEnabled {
+                HStack {
+                    Text(L("cc.appVolumeOff")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L("cc.turnOn")) { runtime.config.audio.appVolumeEnabled = true }
+                        .controlSize(.small)
+                }
+            } else {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let audible = apps.audibleEntries(at: context.date)
+                    if audible.isEmpty {
+                        Text(L("mixer.empty")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(audible.prefix(limit)) { entry in
+                                AppVolumeRow(entry: entry)
+                            }
+                        }
+                        .animation(.snappy(duration: 0.25), value: audible.map(\.id))
+                    }
+                }
+            }
+            if apps.lastError != nil {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(L("mixer.error")).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button(L("permissions.grant")) { PermissionCenter.shared.request(.audioCapture) }.controlSize(.small)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+}
+
+/// One app: icon, name, level and a wide slider; the menu picks its output device.
+private struct AppVolumeRow: View {
+    let entry: AppAudioEntry
+
+    var body: some View {
+        let apps = AppAudioController.shared
+        let setting = apps.setting(for: entry.bundleID)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                AppIconView(bundleID: entry.bundleID, size: 16)
+                    .opacity(entry.isPlaying ? 1 : 0.55)
+                Text(entry.name).font(.system(size: 11.5)).lineLimit(1)
+                if entry.isPlaying {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .symbolEffect(.variableColor.iterative, isActive: true)
+                }
+                Spacer(minLength: 4)
+                Text(setting.muted ? L("mixer.muted") : "\(Int(setting.volume * 100))%")
+                    .font(.system(size: 10.5).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Menu {
+                    Button {
+                        apps.setOutputDevice(nil, for: entry.bundleID)
+                    } label: {
+                        if setting.outputDeviceUID == nil { Label(L("mixer.systemOutput"), systemImage: "checkmark") } else { Text(L("mixer.systemOutput")) }
+                    }
+                    Divider()
+                    ForEach(AudioDeviceManager.shared.outputDevices) { device in
+                        Button {
+                            apps.setOutputDevice(device.uid, for: entry.bundleID)
+                        } label: {
+                            if setting.outputDeviceUID == device.uid { Label(device.name, systemImage: "checkmark") } else { Text(device.name) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: setting.outputDeviceUID == nil ? "hifispeaker" : "hifispeaker.fill")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(setting.outputDeviceUID == nil ? Color.secondary : Color.accentColor)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(L("mixer.outputHelp"))
+            }
+            CCSlider(value: Binding(get: { setting.muted ? 0 : Double(setting.volume) }, set: {
+                if setting.muted { apps.toggleMute(for: entry.bundleID) }
+                apps.setVolume(Float($0), for: entry.bundleID)
+            }), range: 0...1.5, symbol: setting.muted ? "speaker.slash.fill" : "speaker.fill", height: 16, label: entry.name) {
+                apps.toggleMute(for: entry.bundleID)
+            }
+        }
+    }
+}
+
+/// The sound mixer as its own menu bar panel (SoundSource-style).
+struct MixerPanelView: View {
+    let runtime: KeystivoRuntime
+    @Environment(\.dismissPanel) private var dismiss
+
+    var body: some View {
+        let devices = AudioDeviceManager.shared
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(L("cc.mixerTitle")).font(.system(size: 13, weight: .semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 6)
+            .padding(.top, 3)
+            CCCard(L("audio.output")) {
+                CCMenu(title: devices.defaultOutput?.name ?? "—") {
+                    ForEach(devices.outputDevices) { device in
+                        Button { try? devices.setDefaultOutput(uid: device.uid) } label: {
+                            Label(device.name, systemImage: device.uid == devices.defaultOutput?.uid ? "checkmark" : device.symbolName)
+                        }
+                    }
+                }
+            } content: {
+                CCSlider(value: Binding(get: { devices.outputMuted ? 0 : Double(devices.outputVolume) }, set: {
+                    if devices.outputMuted { devices.toggleOutputMute() }
+                    devices.setOutputVolume(Float($0))
+                }), symbol: devices.outputMuted ? "speaker.slash.fill" : "speaker.wave.2.fill", label: L("audio.output")) { devices.toggleOutputMute() }
+            }
+            CCCard(L("audio.input")) {
+                CCMenu(title: devices.defaultInput?.name ?? "—") {
+                    ForEach(devices.inputDevices) { device in
+                        Button { try? devices.setDefaultInput(uid: device.uid) } label: {
+                            Label(device.name, systemImage: device.uid == devices.defaultInput?.uid ? "checkmark" : device.symbolName)
+                        }
+                    }
+                }
+            } content: {
+                HStack(spacing: 8) {
+                    Image(systemName: devices.inputMuted ? "mic.slash.fill" : "mic.fill")
+                        .foregroundStyle(devices.inputMuted ? Color.red : Color.secondary)
+                    Text(L(devices.inputMuted ? "audio.mic.muted" : "audio.mic.live")).font(.system(size: 12))
+                    Spacer()
+                    Toggle("", isOn: Binding(get: { !devices.inputMuted }, set: { _ in devices.toggleInputMute() }))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                }
+            }
+            CCCard(L("mixer.apps")) {
+                if !AppAudioController.shared.settings.isEmpty {
+                    Button(L("mixer.resetAll")) { AppAudioController.shared.resetAll() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.accentColor)
+                }
+            } content: {
+                AppVolumeList(runtime: runtime)
+            }
+            Divider().padding(.horizontal, 6)
+            CCRow(symbol: "gearshape", title: L("cc.soundSettings")) {
+                dismiss()
+                runtime.windowsUI.showSettings(section: .audio)
+            }
+        }
+        .padding(8)
     }
 }
 

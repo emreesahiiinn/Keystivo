@@ -11,6 +11,18 @@ struct FocusFollowsMouseTests {
     let notes = Entry(id: 20, pid: 200, layer: 0, bounds: CGRect(x: 400, y: 100, width: 900, height: 700))
     let dock = Entry(id: 1, pid: 50, layer: 20, bounds: CGRect(x: 300, y: 1340, width: 1000, height: 100))
 
+    @Test func frontWindowOfADisplayIsTheOneMostlyOnIt() {
+        let second = CGRect(x: 2560, y: 0, width: 1920, height: 1080)
+        let straddling = Entry(id: 40, pid: 400, layer: 0, bounds: CGRect(x: 2200, y: 100, width: 400, height: 300))
+        let onSecond = Entry(id: 50, pid: 500, layer: 0, bounds: CGRect(x: 2700, y: 100, width: 900, height: 700))
+        let tiny = Entry(id: 60, pid: 600, layer: 0, bounds: CGRect(x: 3000, y: 100, width: 40, height: 20))
+        // The straddling window is mostly on the first display; tiny helper windows don't count.
+        #expect(PointerWindowResolver.frontWindow(on: second, in: [tiny, straddling, onSecond, safari])?.id == 50)
+        #expect(PointerWindowResolver.frontWindow(on: second, in: [safari, notes]) == nil)
+        let menu = Entry(id: 70, pid: 700, layer: PointerWindowResolver.popUpMenuLayer, bounds: .zero)
+        #expect(PointerWindowResolver.frontWindow(on: second, in: [menu, onSecond]) == nil)
+    }
+
     @Test func picksTopmostNormalWindowUnderPointer() {
         let windows = [dock, safari, notes]
         #expect(PointerWindowResolver.window(at: CGPoint(x: 500, y: 200), in: windows)?.id == 10)

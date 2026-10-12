@@ -21,7 +21,7 @@ CATALOG="$ROOT/Packages/KeystivoKit/Sources/KeystivoCore/Resources/Localizable.x
 CACHE="$ROOT/build/savers"
 VERSION="${MARKETING_VERSION:-0.1.0}"
 BUILD_NUMBER="${CURRENT_PROJECT_VERSION:-1}"
-STYLES=(aurora fluid nebula ocean synthwave flip analog rain minimal shuffle)
+STYLES=(glass aurora fluid nebula ocean synthwave flip analog rain minimal shuffle)
 ARCHS=(arm64 x86_64)
 MIN_OS="15.0"
 
@@ -42,7 +42,7 @@ stamp() {
 
 bundle_name() {
     case "$1" in
-        aurora) echo "Aurora";; fluid) echo "Fluid";; nebula) echo "Nebula";; ocean) echo "Ocean";;
+        glass) echo "Glass";; aurora) echo "Aurora";; fluid) echo "Fluid";; nebula) echo "Nebula";; ocean) echo "Ocean";;
         synthwave) echo "Synthwave";; flip) echo "Flip";; analog) echo "Analog";; rain) echo "Rain";;
         minimal) echo "Minimal";; shuffle) echo "Shuffle";;
     esac

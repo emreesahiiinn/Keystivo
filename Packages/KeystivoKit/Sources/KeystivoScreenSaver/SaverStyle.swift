@@ -6,17 +6,27 @@ import SwiftUI
 ///
 /// This module has no dependencies on the rest of Keystivo: the same sources
 /// are compiled into the standalone `.saver` bundles (see Scripts/build-savers.sh).
-public enum SaverStyle: String, CaseIterable, Identifiable, Sendable {
-    case aurora, fluid, nebula, ocean, synthwave, flip, analog, rain, minimal, shuffle
+public enum SaverStyle: String, CaseIterable, Identifiable, Codable, Sendable {
+    case glass, aurora, fluid, nebula, ocean, synthwave, flip, analog, rain, minimal, shuffle
 
     public var id: String { rawValue }
 
     /// Styles that `shuffle` rotates through.
-    public static let rotating: [SaverStyle] = [.aurora, .fluid, .nebula, .ocean, .synthwave, .flip, .analog, .rain, .minimal]
+    public static let rotating: [SaverStyle] = [.glass, .aurora, .fluid, .nebula, .ocean, .synthwave, .flip, .analog, .rain, .minimal]
+
+    /// Clock designs that can float over a see-through backdrop (the rest are
+    /// full-screen artwork).
+    public var supportsBackdrop: Bool {
+        switch self {
+        case .glass, .flip, .analog, .minimal, .shuffle: true
+        default: false
+        }
+    }
 
     /// Bundle and class name fragment, e.g. "Flip" → `Keystivo Flip.saver`.
     public var bundleName: String {
         switch self {
+        case .glass: "Glass"
         case .aurora: "Aurora"
         case .fluid: "Fluid"
         case .nebula: "Nebula"
@@ -34,6 +44,7 @@ public enum SaverStyle: String, CaseIterable, Identifiable, Sendable {
 
     public var symbol: String {
         switch self {
+        case .glass: "rectangle.on.rectangle"
         case .aurora: "sparkles"
         case .fluid: "drop.halffull"
         case .nebula: "moon.stars"
@@ -52,9 +63,38 @@ public enum SaverStyle: String, CaseIterable, Identifiable, Sendable {
     var frameInterval: Double? {
         switch self {
         case .flip, .analog, .fluid: 1.0 / 30
+        case .glass: 1.0 / 20
         case .rain: 1.0 / 20
         case .aurora, .nebula, .ocean, .synthwave, .minimal, .shuffle: nil
         }
+    }
+}
+
+/// What is behind a clock design. Only Keystivo itself can show the desktop
+/// through a screen saver; macOS screen savers always use the design's own.
+public enum SaverBackdrop: String, CaseIterable, Identifiable, Codable, Sendable {
+    /// The design's own background.
+    case design
+    /// The desktop and windows stay visible.
+    case clear
+    /// The desktop, darkened.
+    case dim
+    /// The desktop, blurred like frosted glass.
+    case frosted
+
+    public var id: String { rawValue }
+    public var titleKey: String { "saver.backdrop.\(rawValue)" }
+}
+
+/// Whether a design draws its own background (false over a see-through backdrop).
+struct SaverDrawsBackgroundKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var saverDrawsBackground: Bool {
+        get { self[SaverDrawsBackgroundKey.self] }
+        set { self[SaverDrawsBackgroundKey.self] = newValue }
     }
 }
 

@@ -21,7 +21,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case launcher, clipboard, snippets, automation, plugins
     case switcher, windows, dock, workspaces
     case navigation, gestures, mouseKeyboard, audio, system
-    case menuBar, screenTools, displays, screenSavers, battery, files, links, presentation
+    case widgets, menuBar, screenTools, displays, screenSavers, battery, files, links, presentation
     case diagnostics, backup, about
 
     var id: String { rawValue }
@@ -46,6 +46,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .audio: "speaker.wave.2.fill"
         case .system: "cpu.fill"
         case .mouseKeyboard: "computermouse.fill"
+        case .widgets: "square.grid.2x2.fill"
         case .menuBar: "menubar.rectangle"
         case .screenTools: "viewfinder"
         case .displays: "sun.max.fill"
@@ -78,6 +79,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .audio: .pink
         case .diagnostics: .red
         case .mouseKeyboard: .mint
+        case .widgets: .orange
         case .menuBar: .indigo
         case .screenTools: .orange
         case .displays: .yellow
@@ -96,7 +98,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         ("settings.group.productivity", [.launcher, .clipboard, .snippets, .automation, .plugins]),
         ("settings.group.windows", [.switcher, .windows, .dock, .workspaces]),
         ("settings.group.input", [.navigation, .gestures, .mouseKeyboard, .audio, .system]),
-        ("settings.group.utilities", [.menuBar, .screenTools, .displays, .screenSavers, .battery, .files, .links, .presentation]),
+        ("settings.group.utilities", [.widgets, .menuBar, .screenTools, .displays, .screenSavers, .battery, .files, .links, .presentation]),
         ("settings.group.support", [.diagnostics, .backup, .about]),
     ]
 }
@@ -142,6 +144,15 @@ final class WindowPresenter: NSObject, NSWindowDelegate {
         settingsWindow = window
         present(window)
     }
+
+    /// ⌘, from any Keystivo panel: brings Settings back where the user left it.
+    func showSettingsAtLastSection() {
+        let window = settingsWindow ?? makeSettingsWindow()
+        settingsWindow = window
+        present(window)
+    }
+
+    var isSettingsKey: Bool { settingsWindow?.isKeyWindow == true }
 
     func showOnboarding() {
         let window = onboardingWindow ?? makeWindow(
@@ -251,6 +262,7 @@ struct SettingsRootView: View {
         case .audio: AudioPage(runtime: runtime)
         case .system: SystemPage(runtime: runtime)
         case .mouseKeyboard: MouseKeyboardPage(runtime: runtime)
+        case .widgets: WidgetsPage(runtime: runtime)
         case .menuBar: MenuBarPage(runtime: runtime)
         case .screenTools: ScreenToolsPage(runtime: runtime)
         case .displays: DisplaysPage(runtime: runtime)

@@ -11,6 +11,20 @@ struct ScreenSaverTests {
         #expect(!SaverStyle.rotating.contains(.shuffle))
     }
 
+    @Test func seeThroughShuffleOnlyPicksClocks() {
+        for slot in 0..<SaverStyle.rotating.count * 2 {
+            let date = Date(timeIntervalSinceReferenceDate: Double(slot) * 180 + 1)
+            #expect(SaverRootView.resolved(.shuffle, at: date, clocksOnly: true).supportsBackdrop)
+        }
+        #expect(!SaverStyle.aurora.supportsBackdrop)
+        #expect(SaverStyle.glass.supportsBackdrop)
+    }
+
+    @Test func artworkIgnoresSeeThroughBackdrop() {
+        #expect(SaverRootView(style: .aurora, backdrop: .clear).backdrop == .design)
+        #expect(SaverRootView(style: .flip, backdrop: .frosted).backdrop == .frosted)
+    }
+
     @Test func driftStaysSmall() {
         for offset in stride(from: 0.0, through: 600, by: 37) {
             let drift = SaverClock.drift(Date(timeIntervalSinceReferenceDate: offset), amplitude: 20)

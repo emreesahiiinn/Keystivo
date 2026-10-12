@@ -167,15 +167,13 @@ struct WindowsPage: View {
             }
             Section {
                 Toggle(L("focusFollows.enabled"), isOn: $runtime.config.windows.focusFollowsMouse.isEnabled)
-                LabeledContent(L("focusFollows.delay")) {
-                    HStack {
-                        Slider(value: $runtime.config.windows.focusFollowsMouse.delay, in: 0.05...1, step: 0.05).frame(width: 220)
-                        Text(Measurement(value: runtime.config.windows.focusFollowsMouse.delay, unit: UnitDuration.seconds)
-                            .formatted(.measurement(width: .abbreviated, numberFormatStyle: .number.precision(.fractionLength(2))).locale(Localizer.shared.locale)))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 56, alignment: .trailing)
-                    }
+                DelaySlider(titleKey: "focusFollows.delay", value: $runtime.config.windows.focusFollowsMouse.delay, range: 0.05...1)
+                    .disabled(!runtime.config.windows.focusFollowsMouse.isEnabled)
+                DelaySlider(titleKey: "focusFollows.displayDelay", value: $runtime.config.windows.focusFollowsMouse.displayChangeDelay, range: 0...2)
+                    .disabled(!runtime.config.windows.focusFollowsMouse.isEnabled)
+                Toggle(isOn: $runtime.config.windows.focusFollowsMouse.focusesDisplayOnEnter) {
+                    Text(L("focusFollows.displayEnter"))
+                    Text(L("focusFollows.displayEnterHelp"))
                 }
                 .disabled(!runtime.config.windows.focusFollowsMouse.isEnabled)
                 VStack(alignment: .leading) {
@@ -539,5 +537,25 @@ private struct WindowButtonRow: View {
         .labelsHidden()
         .fixedSize()
         .controlSize(.small)
+    }
+}
+
+/// A labeled seconds slider (focus delays).
+private struct DelaySlider: View {
+    let titleKey: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+
+    var body: some View {
+        LabeledContent(L(titleKey)) {
+            HStack {
+                Slider(value: $value, in: range, step: 0.05).frame(width: 220)
+                Text(Measurement(value: value, unit: UnitDuration.seconds)
+                    .formatted(.measurement(width: .abbreviated, numberFormatStyle: .number.precision(.fractionLength(2))).locale(Localizer.shared.locale)))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 56, alignment: .trailing)
+            }
+        }
     }
 }

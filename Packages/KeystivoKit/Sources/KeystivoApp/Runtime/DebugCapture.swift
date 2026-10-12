@@ -49,8 +49,15 @@ enum DebugCapture {
             configuration.width = Int(window.frame.width * 2)
             configuration.height = Int(window.frame.height * 2)
             var filter = SCContentFilter(desktopIndependentWindow: window)
-            // Panels: grab their region of the display, so materials show what is behind them.
-            if anyLayer, let display = content.displays.first(where: { $0.frame.intersects(window.frame) }) {
+            // `-KSCaptureRect "x,y,w,h"`: a fixed region of the main display (top-left origin).
+            if let rect = UserDefaults.standard.string(forKey: "KSCaptureRect")?.split(separator: ",").compactMap({ Double($0) }), rect.count == 4,
+               let display = content.displays.first(where: { $0.frame.origin == .zero }) ?? content.displays.first {
+                let region = CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3])
+                filter = SCContentFilter(display: display, excludingWindows: [])
+                configuration.sourceRect = region
+                configuration.width = Int(region.width * 2)
+                configuration.height = Int(region.height * 2)
+            } else if anyLayer, let display = content.displays.first(where: { $0.frame.intersects(window.frame) }) {
                 filter = SCContentFilter(display: display, excludingWindows: [])
                 // `-KSCapturePadding N` widens the region (menus next to the panel).
                 let padding = CGFloat(UserDefaults.standard.double(forKey: "KSCapturePadding"))

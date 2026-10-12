@@ -47,6 +47,17 @@ nonisolated public enum PointerWindowResolver {
         return entries.first { $0.layer == 0 && $0.alpha >= 0.01 && $0.bounds.contains(point) }
     }
 
+    /// The front-most normal window mostly on `display` (the window a user
+    /// means when moving to that screen), or nil while a menu is open.
+    public static func frontWindow(on display: CGRect, in entries: [Entry], passThrough: Set<CGWindowID> = []) -> Entry? {
+        if entries.contains(where: { $0.layer == popUpMenuLayer }) { return nil }
+        return entries.first { entry in
+            guard entry.layer == 0, entry.alpha >= 0.01, !passThrough.contains(entry.id), entry.bounds.width > 80, entry.bounds.height > 60 else { return false }
+            let overlap = entry.bounds.intersection(display)
+            return overlap.width * overlap.height >= entry.bounds.width * entry.bounds.height * 0.5
+        }
+    }
+
     /// On-screen windows of the current Space, front to back.
     public static func onScreenWindows() -> [Entry] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
@@ -88,6 +99,12 @@ public final class FocusFollowsMouse: EventTapHandler {
     }
     /// Seconds the pointer must rest on a window before it becomes active.
     public var delay: TimeInterval = 0.2
+    /// The wait after the pointer crossed to another display (often wanted
+    /// longer, so passing through a screen doesn't steal focus, or shorter).
+    public var displayChangeDelay: TimeInterval = 0.2
+    /// After crossing to another display, activate its front window even when
+    /// the pointer rests on the desktop.
+    public var focusesDisplayOnEnter = false
     public var excludedBundleIDs: Set<String> = []
     /// Keystivo's own modal UI (launcher, switcher, hints) pauses focusing.
     @ObservationIgnored public var isSuspended: () -> Bool = { false }
@@ -101,6 +118,9 @@ public final class FocusFollowsMouse: EventTapHandler {
     @ObservationIgnored private var restTimer: Timer?
     /// Window the pointer last rested on.
     @ObservationIgnored private var lastRestWindow: CGWindowID?
+    @ObservationIgnored private var pointerDisplay: CGDirectDisplayID?
+    /// The pointer moved to another display since it last rested.
+    @ObservationIgnored private var crossedDisplay = false
 
     public init() {}
 
@@ -115,10 +135,16 @@ public final class FocusFollowsMouse: EventTapHandler {
         movementModifiers = KeyModifiers(event.flags)
         if let restAnchor, hypot(location.x - restAnchor.x, location.y - restAnchor.y) < Self.jitter { return .pass }
         restAnchor = location
+        let display = Self.display(at: location)
+        if display != pointerDisplay {
+            if pointerDisplay != nil { crossedDisplay = true }
+            pointerDisplay = display
+        }
+        let wait = crossedDisplay ? displayChangeDelay : delay
         if let restTimer, restTimer.isValid {
-            restTimer.fireDate = Date(timeIntervalSinceNow: delay)
+            restTimer.fireDate = Date(timeIntervalSinceNow: wait)
         } else {
-            restTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            restTimer = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated { self?.pointerRested() }
             }
         }
@@ -127,12 +153,18 @@ public final class FocusFollowsMouse: EventTapHandler {
 
     private func pointerRested() {
         restAnchor = nil
+        let crossed = crossedDisplay
+        crossedDisplay = false
         let modifiers = movementModifiers.union(KeyModifiers(NSEvent.modifierFlags))
         guard isEnabled, NSEvent.pressedMouseButtons == 0,
               modifiers.intersection([.command, .option, .control, .shift]).isEmpty,
               !isSuspended(), let point = CGEvent(source: nil)?.location else { return }
         let entries = PointerWindowResolver.onScreenWindows()
-        let target = PointerWindowResolver.window(at: point, in: entries, passThrough: Self.ownPassThroughWindows())
+        let passThrough = Self.ownPassThroughWindows()
+        var target = PointerWindowResolver.window(at: point, in: entries, passThrough: passThrough)
+        if target == nil, crossed, focusesDisplayOnEnter, let display = Self.display(at: point) {
+            target = PointerWindowResolver.frontWindow(on: CGDisplayBounds(display), in: entries, passThrough: passThrough)
+        }
         let previous = lastRestWindow
         lastRestWindow = target?.id
         guard let target, target.id != previous,
@@ -159,6 +191,13 @@ public final class FocusFollowsMouse: EventTapHandler {
     }
 
     /// Our own click-through overlays (HUDs, highlights) must not hide what is beneath.
+    static func display(at point: CGPoint) -> CGDirectDisplayID? {
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(point, 1, &display, &count) == .success, count > 0 else { return nil }
+        return display
+    }
+
     public static func ownPassThroughWindows() -> Set<CGWindowID> {
         Set(NSApp.windows.filter { $0.isVisible && ($0.ignoresMouseEvents || $0.alphaValue < 0.01) }.map { CGWindowID($0.windowNumber) })
     }

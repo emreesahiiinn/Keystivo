@@ -1,4 +1,5 @@
 import AppKit
+import IOKit.pwr_mgt
 import KeystivoAccessibility
 import KeystivoCore
 import KeystivoScreenSaver
@@ -241,8 +242,55 @@ final class ScreenSaverManager {
     }
 
     /// Shows a design full screen inside Keystivo; any key, click or mouse move ends it.
-    func showPreview(_ style: SaverStyle) {
-        preview.show(style)
+    func showPreview(_ style: SaverStyle, backdrop: SaverBackdrop = .design) {
+        preview.show(style, backdrop: backdrop)
+    }
+
+    var isShowingPreview: Bool { preview.isShowing }
+
+    // MARK: Keystivo's own screen saver
+
+    @ObservationIgnored private var idleTimer: Timer?
+    @ObservationIgnored private var saverSettings = KeystivoSaverSettings()
+
+    func apply(_ settings: KeystivoSaverSettings) {
+        saverSettings = settings
+        idleTimer?.invalidate()
+        idleTimer = nil
+        guard settings.startsWhenIdle else { return }
+        let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkIdle() }
+        }
+        timer.tolerance = 3
+        RunLoop.main.add(timer, forMode: .common)
+        idleTimer = timer
+    }
+
+    /// Starts Keystivo's screen saver now, with the chosen design and backdrop.
+    func startKeystivoSaver() {
+        preview.show(saverSettings.style, backdrop: saverSettings.backdrop)
+    }
+
+    private func checkIdle() {
+        guard !preview.isShowing else { return }
+        let anyInput = CGEventType(rawValue: ~0)!
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+        guard idle >= Double(saverSettings.idleMinutes * 60), !Self.displaySleepIsPrevented(), !Self.isScreenLocked() else { return }
+        startKeystivoSaver()
+    }
+
+    /// Something (a video, a call, Keep Awake) keeps the display on: macOS
+    /// wouldn't start its screen saver either.
+    static func displaySleepIsPrevented() -> Bool {
+        var status: Unmanaged<CFDictionary>?
+        guard IOPMCopyAssertionsStatus(&status) == kIOReturnSuccess,
+              let values = status?.takeRetainedValue() as? [String: Int] else { return false }
+        return (values["PreventUserIdleDisplaySleep"] ?? 0) > 0 || (values["NoDisplaySleepAssertion"] ?? 0) > 0
+    }
+
+    static func isScreenLocked() -> Bool {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        return (session["CGSSessionScreenIsLocked"] as? Bool) == true
     }
 }
 
@@ -252,20 +300,27 @@ final class SaverPreviewController {
     private var monitors: [Any] = []
     private var startPointer: CGPoint = .zero
 
-    func show(_ style: SaverStyle) {
+    var isShowing: Bool { !windows.isEmpty }
+
+    func show(_ style: SaverStyle, backdrop: SaverBackdrop = .design) {
         close()
         startPointer = NSEvent.mouseLocation
+        let backdrop = style.supportsBackdrop ? backdrop : .design
         for screen in NSScreen.screens {
             let window = SaverWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.level = .screenSaver
-            window.backgroundColor = .black
+            window.isOpaque = backdrop == .design
+            window.backgroundColor = backdrop == .design ? .black : .clear
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            window.contentView = NSHostingView(rootView: SaverRootView(style: style))
+            window.contentView = Self.content(style: style, backdrop: backdrop, size: screen.frame.size)
             window.setFrame(screen.frame, display: false)
             window.alphaValue = 0
             window.orderFrontRegardless()
-            window.animator().alphaValue = 1
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = backdrop == .design ? 0.25 : 0.8
+                window.animator().alphaValue = 1
+            }
             windows.append(window)
         }
         windows.first?.makeKey()
@@ -294,6 +349,23 @@ final class SaverPreviewController {
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
         NSCursor.unhide()
+    }
+
+    /// The design over its backdrop: a blur of the desktop behind the window for
+    /// frosted, a dark veil for dimmed, nothing for clear.
+    private static func content(style: SaverStyle, backdrop: SaverBackdrop, size: CGSize) -> NSView {
+        let hosting = NSHostingView(rootView: SaverRootView(style: style, backdrop: backdrop)
+            .background(backdrop == .dim ? Color.black.opacity(0.55) : backdrop == .clear ? Color.black.opacity(0.12) : Color.clear))
+        guard backdrop == .frosted else { return hosting }
+        let blur = NSVisualEffectView(frame: CGRect(origin: .zero, size: size))
+        blur.material = .fullScreenUI
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.appearance = NSAppearance(named: .darkAqua)
+        hosting.frame = blur.bounds
+        hosting.autoresizingMask = [.width, .height]
+        blur.addSubview(hosting)
+        return blur
     }
 
     private final class SaverWindow: NSWindow {

@@ -146,6 +146,7 @@ struct MenuBarPage: View {
     var body: some View {
         Form {
             PageHeader(symbol: "menubar.rectangle", color: .indigo, titleKey: "settings.page.menuBar", subtitleKey: "menuBarSettings.subtitle")
+            ControlCenterSettingsSection(runtime: runtime)
             Section {
                 Toggle(L("menuBarSettings.manager"), isOn: $runtime.config.menuBar.managerEnabled)
                 Picker(L("menuBarSettings.autoCollapse"), selection: $runtime.config.menuBar.autoCollapseSeconds) {

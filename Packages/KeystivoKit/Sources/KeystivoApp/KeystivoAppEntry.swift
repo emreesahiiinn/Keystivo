@@ -52,23 +52,20 @@ public final class KeystivoAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// All SwiftUI scenes of the app. The menu bar extra is the control center;
+/// All SwiftUI scenes of the app (none visible: the control center is AppKit);
 /// other windows are managed by ``WindowPresenter``.
 public struct KeystivoScenes: Scene {
-    @State private var runtime = KeystivoRuntime.shared
 
     public init() {}
 
     public var body: some Scene {
-        MenuBarExtra(isInserted: Binding(
-            get: { runtime.config.general.showsMenuBarIcon },
-            set: { runtime.config.general.showsMenuBarIcon = $0 }
-        )) {
-            ControlCenterView(runtime: runtime)
-                .localizedRoot()
+        // The menu bar item and its panel are AppKit (``MenuBarPanelController``):
+        // SwiftUI's menu bar window can't be made see-through or handle ⌘, / Esc.
+        // A scene is still required, so this one is never inserted.
+        MenuBarExtra(isInserted: .constant(false)) {
+            EmptyView()
         } label: {
-            Image(systemName: "command.square.fill")
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }

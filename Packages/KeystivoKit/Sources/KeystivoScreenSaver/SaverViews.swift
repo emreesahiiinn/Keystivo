@@ -7,26 +7,28 @@ public struct SaverRootView: View {
     let isPreview: Bool
     /// Renders a still frame at this moment (thumbnails, preview cards); nil = live.
     let fixedDate: Date?
+    let backdrop: SaverBackdrop
 
-    public init(style: SaverStyle, isPreview: Bool = false, fixedDate: Date? = nil) {
+    public init(style: SaverStyle, isPreview: Bool = false, fixedDate: Date? = nil, backdrop: SaverBackdrop = .design) {
         self.style = style
         self.isPreview = isPreview
         self.fixedDate = fixedDate
+        self.backdrop = style.supportsBackdrop ? backdrop : .design
     }
 
     public var body: some View {
         GeometryReader { proxy in
             let scale = min(proxy.size.width / 1440, proxy.size.height / 900)
             ZStack {
-                Color.black
-                if style == .shuffle, let fixedDate {
+                if backdrop == .design { Color.black }
+                if style == .shuffle, let fixedDate, backdrop == .design {
                     ShuffleCollage(date: fixedDate, size: proxy.size)
                 } else if let fixedDate {
                     SaverDesign(style: style, date: fixedDate, scale: scale, size: proxy.size, live: false)
                 } else if style == .shuffle {
                     // Pick the design once a second; each design then runs at its own pace.
                     TimelineView(.periodic(from: .now, by: 1)) { context in
-                        let current = Self.resolved(style, at: context.date)
+                        let current = Self.resolved(style, at: context.date, clocksOnly: backdrop != .design)
                         LiveDesign(style: current, scale: scale, size: proxy.size, isPreview: isPreview)
                             .id(current)
                             .transition(.opacity.animation(.easeInOut(duration: 1.5)))
@@ -37,15 +39,17 @@ public struct SaverRootView: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
+            .environment(\.saverDrawsBackground, backdrop == .design)
         }
         .ignoresSafeArea()
     }
 
-    /// Shuffle shows each design for three minutes.
-    static func resolved(_ style: SaverStyle, at date: Date) -> SaverStyle {
+    /// Shuffle shows each design for three minutes (only clocks over a see-through backdrop).
+    static func resolved(_ style: SaverStyle, at date: Date, clocksOnly: Bool = false) -> SaverStyle {
         guard style == .shuffle else { return style }
+        let pool = clocksOnly ? SaverStyle.rotating.filter(\.supportsBackdrop) : SaverStyle.rotating
         let slot = Int(date.timeIntervalSinceReferenceDate / 180)
-        return SaverStyle.rotating[slot % SaverStyle.rotating.count]
+        return pool[slot % pool.count]
     }
 }
 
@@ -78,6 +82,7 @@ private struct SaverDesign: View {
 
     var body: some View {
         switch style {
+        case .glass: GlassTheme(date: date, scale: scale)
         case .aurora: AuroraTheme(date: date, scale: scale, live: live)
         case .fluid: FluidTheme(date: date, scale: scale)
         case .nebula: NebulaTheme(date: date, scale: scale, live: live)
@@ -342,6 +347,7 @@ private struct GrainOverlay: View {
 private struct FlipTheme: View {
     let date: Date
     let scale: CGFloat
+    @Environment(\.saverDrawsBackground) private var drawsBackground
 
     var body: some View {
         let calendar = Calendar.current
@@ -351,7 +357,9 @@ private struct FlipTheme: View {
         // The flip plays during the first 0.8 s of each minute.
         let progress = min(1, date.timeIntervalSince(minuteStart) / 0.8)
         ZStack {
-            RadialGradient(colors: [Color(white: 0.11), Color(white: 0.02)], center: .center, startRadius: 0, endRadius: 1000 * scale)
+            if drawsBackground {
+                RadialGradient(colors: [Color(white: 0.11), Color(white: 0.02)], center: .center, startRadius: 0, endRadius: 1000 * scale)
+            }
             VStack(spacing: 44 * scale) {
                 HStack(spacing: 30 * scale) {
                     FlipCard(old: before.hour, new: now.hour, progress: before.hour == now.hour ? 1 : progress, scale: scale)
@@ -368,7 +376,8 @@ private struct FlipTheme: View {
                 Text(SaverClock.longDate(date).uppercased())
                     .font(.system(size: 22 * scale, weight: .semibold))
                     .tracking(7 * scale)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color(white: drawsBackground ? 0.5 : 0.85))
+                    .shadow(color: .black.opacity(drawsBackground ? 0 : 0.5), radius: 10 * scale)
             }
             .offset(SaverClock.drift(date, amplitude: 14 * scale))
         }
@@ -456,13 +465,16 @@ private struct FlipCard: View {
 private struct AnalogTheme: View {
     let date: Date
     let scale: CGFloat
+    @Environment(\.saverDrawsBackground) private var drawsBackground
 
     var body: some View {
         let seconds = SaverClock.secondsOfDay(date)
         let day = Calendar.current.component(.day, from: date)
         ZStack {
-            RadialGradient(colors: [Color(red: 0.09, green: 0.1, blue: 0.12), Color(red: 0.01, green: 0.01, blue: 0.02)],
-                           center: .center, startRadius: 0, endRadius: 1000 * scale)
+            if drawsBackground {
+                RadialGradient(colors: [Color(red: 0.09, green: 0.1, blue: 0.12), Color(red: 0.01, green: 0.01, blue: 0.02)],
+                               center: .center, startRadius: 0, endRadius: 1000 * scale)
+            }
             Canvas { context, size in
                 WatchFace.draw(in: &context, size: size, seconds: seconds, day: day, scale: scale)
             }
@@ -605,13 +617,16 @@ private enum WatchFace {
 private struct MinimalTheme: View {
     let date: Date
     let scale: CGFloat
+    @Environment(\.saverDrawsBackground) private var drawsBackground
 
     var body: some View {
         let accent = Color(red: 1, green: 0.62, blue: 0.26)
         let time = SaverClock.hourMinute(date)
         ZStack {
-            Color(red: 0.045, green: 0.043, blue: 0.05)
-            GrainOverlay(opacity: 0.07)
+            if drawsBackground {
+                Color(red: 0.045, green: 0.043, blue: 0.05)
+                GrainOverlay(opacity: 0.07)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 Text(date.formatted(.dateTime.weekday(.wide)).uppercased())
                     .font(.system(size: 22 * scale, weight: .semibold))
@@ -643,6 +658,7 @@ private struct MinimalTheme: View {
                     .padding(.top, 30 * scale)
             }
             .foregroundStyle(.white)
+            .shadow(color: .black.opacity(drawsBackground ? 0 : 0.45), radius: 18 * scale, y: 4 * scale)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.leading, 150 * scale)
             .offset(SaverClock.drift(date, amplitude: 12 * scale))
@@ -675,5 +691,88 @@ private struct WeekStrip: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Glass
+
+/// A frosted glass card holding the time, over slowly drifting color — or over
+/// the desktop itself when Keystivo runs it see-through.
+private struct GlassTheme: View {
+    let date: Date
+    let scale: CGFloat
+    @Environment(\.saverDrawsBackground) private var drawsBackground
+
+    var body: some View {
+        let time = SaverClock.hourMinute(date)
+        let radius = 70 * scale
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        ZStack {
+            if drawsBackground {
+                GlassBackdrop(time: date.timeIntervalSinceReferenceDate)
+                GrainOverlay(opacity: 0.05)
+            }
+            VStack(spacing: 14 * scale) {
+                HStack(alignment: .firstTextBaseline, spacing: 12 * scale) {
+                    Text("\(time.hour):\(time.minute)")
+                        .font(.system(size: 230 * scale, weight: .light, design: .rounded))
+                        .monospacedDigit()
+                        .kerning(-5 * scale)
+                        .contentTransition(.numericText())
+                    if let period = time.period {
+                        Text(period).font(.system(size: 40 * scale, weight: .medium, design: .rounded)).opacity(0.75)
+                    }
+                }
+                Text(SaverClock.longDate(date))
+                    .font(.system(size: 34 * scale, weight: .medium, design: .rounded))
+                    .opacity(0.78)
+            }
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.18), radius: 12 * scale, y: 3 * scale)
+            .animation(.smooth(duration: 0.6), value: time.minute)
+            .padding(.horizontal, 110 * scale)
+            .padding(.vertical, 70 * scale)
+            .background {
+                ZStack {
+                    if drawsBackground {
+                        shape.fill(.ultraThinMaterial)
+                    }
+                    shape.fill(Color.white.opacity(drawsBackground ? 0.06 : 0.1))
+                    // Light catching the top-left edge.
+                    shape.fill(LinearGradient(colors: [.white.opacity(0.22), .white.opacity(0)], startPoint: .topLeading, endPoint: .center))
+                    shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.08), .white.opacity(0.25)],
+                                                      startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5 * scale)
+                }
+                .shadow(color: .black.opacity(0.28), radius: 60 * scale, y: 30 * scale)
+            }
+            .environment(\.colorScheme, .dark)
+            .offset(SaverClock.drift(date, amplitude: 18 * scale))
+        }
+    }
+}
+
+/// Deep, slowly moving color for the glass to sit on.
+private struct GlassBackdrop: View {
+    let time: TimeInterval
+
+    var body: some View {
+        let t = time / 14
+        func wave(_ phase: Double, _ amount: Float) -> Float { Float(sin(t + phase)) * amount }
+        // Edge points slide along their edge only, so the color always fills the screen.
+        let points: [SIMD2<Float>] = [
+            [0, 0], [0.5 + wave(0.4, 0.12), 0], [1, 0],
+            [0, 0.5 + wave(1.3, 0.1)], [0.5 + wave(2.1, 0.14), 0.5 + wave(2.9, 0.12)], [1, 0.5 + wave(3.2, 0.1)],
+            [0, 1], [0.5 + wave(4.4, 0.12), 1], [1, 1],
+        ]
+        // Stays among blues, violets and roses: never muddy greens or browns.
+        let drift = sin(time / 420) * 0.07
+        func tone(_ hue: Double, _ saturation: Double, _ brightness: Double) -> Color {
+            Color(hue: (hue + drift + 1).truncatingRemainder(dividingBy: 1), saturation: saturation, brightness: brightness)
+        }
+        return MeshGradient(width: 3, height: 3, points: points, colors: [
+            tone(0.66, 0.80, 0.20), tone(0.72, 0.70, 0.38), tone(0.78, 0.62, 0.30),
+            tone(0.60, 0.75, 0.32), tone(0.88, 0.50, 0.58), tone(0.74, 0.62, 0.42),
+            tone(0.63, 0.85, 0.16), tone(0.69, 0.72, 0.30), tone(0.94, 0.55, 0.36),
+        ])
     }
 }

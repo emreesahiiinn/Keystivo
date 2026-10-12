@@ -20,7 +20,7 @@ import SwiftUI
 /// Non-activating by default: it takes keyboard focus without making Keystivo
 /// the active app, so the previous app keeps its menu bar and receives pastes
 /// after the panel closes — the same behavior as Spotlight.
-final class FloatingPanel: NSPanel {
+class FloatingPanel: NSPanel {
     var onResignKey: (() -> Void)?
     var acceptsKey = true
 
@@ -51,7 +51,7 @@ final class FloatingPanel: NSPanel {
     }
 
     /// Hosts a SwiftUI view, sizing the panel to `size` (or the view's fitting size).
-    func host<Content: View>(_ view: Content, size: CGSize? = nil) {
+    final func host<Content: View>(_ view: Content, size: CGSize? = nil) {
         let hosting = NSHostingView(rootView: view.localizedRoot())
         hosting.sizingOptions = size == nil ? [.preferredContentSize] : []
         contentView = hosting
@@ -59,7 +59,7 @@ final class FloatingPanel: NSPanel {
     }
 
     /// Centers horizontally on `screen`, with the top at `topFraction` of its height.
-    func position(on screen: NSScreen?, topFraction: CGFloat = 0.22) {
+    final func position(on screen: NSScreen?, topFraction: CGFloat = 0.22) {
         guard let screen = screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let size = frame.size
@@ -69,7 +69,7 @@ final class FloatingPanel: NSPanel {
     }
 
     /// Fades in while gliding up a few points — a soft, spring-like entrance.
-    func presentAnimated(makeKey: Bool, rise: CGFloat = 10) {
+    final func presentAnimated(makeKey: Bool, rise: CGFloat = 10) {
         let target = frame
         alphaValue = 0
         setFrame(target.offsetBy(dx: 0, dy: -rise), display: false)
@@ -83,7 +83,7 @@ final class FloatingPanel: NSPanel {
     }
 
     /// Quick fade-out, then removes the panel from screen.
-    func dismissAnimated(completion: (@MainActor () -> Void)? = nil) {
+    final func dismissAnimated(completion: (@MainActor () -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.12
             animator().alphaValue = 0
@@ -96,7 +96,7 @@ final class FloatingPanel: NSPanel {
         })
     }
 
-    func center(on screen: NSScreen?) {
+    final func center(on screen: NSScreen?) {
         guard let screen = screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         setFrameOrigin(NSPoint(x: (visible.midX - frame.width / 2).rounded(), y: (visible.midY - frame.height / 2).rounded()))

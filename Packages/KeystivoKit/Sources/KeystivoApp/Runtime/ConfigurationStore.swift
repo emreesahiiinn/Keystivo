@@ -172,6 +172,7 @@ final class ConfigurationStore {
         case .files: target.files = source.files
         case .links: target.links = source.links
         case .presentation: target.presentation = source.presentation
+        case .widgets: target.widgets = source.widgets
         }
     }
 

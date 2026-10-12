@@ -17,13 +17,14 @@ import SwiftUI
 
 /// Menu listing every registered action, grouped by category.
 struct ActionPickerMenu<Label: View>: View {
+    var include: (ActionDescriptor) -> Bool = { _ in true }
     let onPick: (ActionDescriptor) -> Void
     @ViewBuilder let label: () -> Label
 
     var body: some View {
         Menu {
             ForEach(ActionCategory.allCases) { category in
-                let descriptors = ActionRegistry.shared.descriptors(in: category).filter { !$0.id.hasPrefix("dynamic.") }
+                let descriptors = ActionRegistry.shared.descriptors(in: category).filter { !$0.id.hasPrefix("dynamic.") && include($0) }
                 if !descriptors.isEmpty {
                     Menu {
                         ForEach(descriptors) { descriptor in

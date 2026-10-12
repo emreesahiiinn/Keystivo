@@ -97,6 +97,18 @@ extension BuiltinActions {
         register("menubar.toggleHidden", "menubar.arrow.up.rectangle", .system, keywords: ["menu bar", "hide icons", "bartender"]) { _, _ in
             runtime.menuBarManager.toggle()
         }
+        register("menubar.controlCenter", "command.square", .system, keywords: ["control center", "menu bar", "panel", "toggles"]) { _, _ in
+            runtime.controlCenter.toggle()
+        }
+        register("menubar.mixer", "slider.vertical.3", .system, keywords: ["sound", "volume", "per app", "soundsource"]) { _, _ in
+            runtime.mixerItem.toggle()
+        }
+        register("widgets.toggleDesktop", "square.grid.2x2", .system, keywords: ["widgets", "desktop", "clock", "weather", "calendar"]) { _, _ in
+            runtime.desktopWidgets.toggleVisibility()
+        }
+        register("widgets.settings", "square.grid.2x2.fill", .system, keywords: ["widgets", "add widget", "gallery"]) { _, _ in
+            runtime.windowsUI.showSettings(section: .widgets)
+        }
         register("monitor.toggle", "gauge.with.dots.needle.67percent", .system, keywords: ["cpu", "memory", "stats", "monitor", "network speed"]) { _, _ in
             runtime.config.menuBar.showsMonitor.toggle()
         }
@@ -120,6 +132,9 @@ extension BuiltinActions {
         // Screen savers
         register("screensaver.start", "sparkles.tv", .system, keywords: ["screen saver", "screensaver", "clock", "idle", "ekran koruyucu"]) { _, _ in
             ScreenSaverManager.startSystemScreenSaver()
+        }
+        register("screensaver.keystivo", "rectangle.on.rectangle", .system, keywords: ["screen saver", "transparent", "glass", "clock", "ekran koruyucu"]) { _, _ in
+            runtime.screenSavers.startKeystivoSaver()
         }
         register("screensaver.preview", "play.rectangle", .system, parameters: [
             ParameterSpec("style", "param.style", .choice(choice(SaverStyle.self) { $0.titleKey }), default: .string(SaverStyle.shuffle.rawValue)),

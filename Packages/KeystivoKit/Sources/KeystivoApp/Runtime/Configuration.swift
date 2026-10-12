@@ -9,6 +9,7 @@ import KeystivoInput
 import KeystivoLinks
 import KeystivoNavigation
 import KeystivoPlugins
+import KeystivoScreenSaver
 import KeystivoSearch
 import KeystivoSystem
 import KeystivoTools
@@ -179,6 +180,10 @@ nonisolated struct FocusFollowsMouseSettings: Codable, Hashable, Sendable {
     var isEnabled = false
     /// Seconds the pointer must rest on a window.
     var delay: Double = 0.2
+    /// Seconds to wait after the pointer moved to another display.
+    var displayChangeDelay: Double = 0.2
+    /// Moving to another display activates its front window, even over the desktop.
+    var focusesDisplayOnEnter = false
     var excludedApps: [String] = []
 }
 
@@ -222,10 +227,65 @@ nonisolated struct MenuBarSettings: Codable, Hashable, Sendable {
     var monitorWidgets: [String: MonitorWidgetSettings] = [:]
     /// What the disk metric shows.
     var diskValue: DiskValueMode = .freeSpace
+    /// What the Keystivo menu bar panel shows, and how.
+    var controlCenter = ControlCenterSettings()
+    /// A separate menu bar item with the sound mixer (per-app volume).
+    var showsMixerItem = false
 
     func widget(for metric: MonitorMetric) -> MonitorWidgetSettings {
         monitorWidgets[metric.rawValue] ?? .default(for: metric)
     }
+}
+
+/// The Keystivo menu bar panel: which modules it shows, in which order, and its look.
+nonisolated struct ControlCenterSettings: Codable, Hashable, Sendable {
+    /// Shown modules, top to bottom; missing ones are hidden.
+    var modules: [ControlCenterModule] = ControlCenterModule.defaultOrder
+    var toggles: [ControlCenterToggle] = ControlCenterToggle.defaults
+    /// Action IDs of the quick actions list.
+    var actions: [String] = ControlCenterSettings.defaultActions
+    var background: PanelBackground = .glass
+
+    static let defaultActions = [
+        "tools.captureText", "tools.recordScreen", "tools.pickColor",
+        "system.lockScreen", "system.sleepDisplays", "system.emptyTrash",
+    ]
+}
+
+nonisolated enum ControlCenterModule: String, Codable, Hashable, Sendable, CaseIterable, Identifiable {
+    case toggles, widgets, sound, displays, windows, actions, power
+    var id: String { rawValue }
+    var titleKey: String { "cc.module.\(rawValue)" }
+    var symbol: String {
+        switch self {
+        case .toggles: "switch.2"
+        case .widgets: "square.grid.2x2"
+        case .sound: "speaker.wave.2"
+        case .displays: "sun.max"
+        case .windows: "rectangle.split.2x1"
+        case .actions: "bolt"
+        case .power: "battery.75percent"
+        }
+    }
+    static let defaultOrder: [ControlCenterModule] = [.toggles, .sound, .displays, .windows, .actions, .power]
+}
+
+nonisolated enum ControlCenterToggle: String, Codable, Hashable, Sendable, CaseIterable, Identifiable {
+    case focus, keepAwake, mic, darkMode, clipboard, snippets, gestures, automation, launcherBar, focusFollowsMouse, dragSnap
+    var id: String { rawValue }
+    var titleKey: String { "cc.toggle.\(rawValue)" }
+    static let defaults: [ControlCenterToggle] = [.focus, .keepAwake, .mic, .darkMode, .clipboard, .snippets, .gestures, .automation]
+}
+
+/// Background of Keystivo's floating panels.
+nonisolated enum PanelBackground: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Frosted glass: the desktop shows through, blurred.
+    case glass
+    /// More see-through glass.
+    case clear
+    /// Opaque, for the most contrast.
+    case solid
+    var titleKey: String { "panelBackground.\(rawValue)" }
 }
 
 /// How one menu bar metric is drawn.
@@ -288,7 +348,17 @@ nonisolated enum DiskValueMode: String, Codable, Hashable, Sendable, CaseIterabl
     var titleKey: String { "monitor.disk.\(rawValue)" }
 }
 
+/// Keystivo's own screen saver: started by Keystivo after a while idle, so it
+/// can float over the desktop (see-through, dimmed or frosted).
+nonisolated struct KeystivoSaverSettings: Codable, Hashable, Sendable {
+    var startsWhenIdle = false
+    var idleMinutes = 5
+    var style: SaverStyle = .glass
+    var backdrop: SaverBackdrop = .frosted
+}
+
 nonisolated struct ToolsSettings: Codable, Hashable, Sendable {
+    var keystivoSaver = KeystivoSaverSettings()
     var colorFormat: ColorFormat = .hex
     var ocrShowsResult = true
     var pinsAfterCapture = false
@@ -495,12 +565,13 @@ nonisolated struct KeystivoConfiguration: Codable, Hashable, Sendable {
     var files = FilesSettings()
     var links = LinkSettings()
     var presentation = PresentationSettings()
+    var widgets = WidgetSettings()
     var usage: [String: UsageStats] = [:]
 
     /// Sections that can be exported/imported independently.
     enum Section: String, CaseIterable, Identifiable, Sendable {
         case general, hotkeys, launcher, switcher, windows, dock, navigation, audio, gestures, automation, clipboard, snippets, workspace, system, plugins
-        case input, menuBar, tools, files, links, presentation
+        case input, menuBar, tools, files, links, presentation, widgets
         var id: String { rawValue }
         var titleKey: String { "settings.section.\(rawValue)" }
     }
