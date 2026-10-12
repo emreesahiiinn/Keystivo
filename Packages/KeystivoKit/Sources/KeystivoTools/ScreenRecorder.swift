@@ -118,13 +118,34 @@ public final class ScreenRecorder {
                 self?.finish(.failure(error))
                 return
             }
-            // The recording output reports completion; don't wait forever for it.
+            // The recording output reports completion. If that never comes, accept the
+            // file only once it has stopped growing and opens as a movie.
             self?.finishTimeout = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(4))
-                guard !Task.isCancelled, let self, self.state == .stopping, let url = self.outputURL else { return }
-                self.finish(FileManager.default.fileExists(atPath: url.path) ? .success(url) : .failure(CocoaError(.fileNoSuchFile)))
+                guard !Task.isCancelled, let url = self?.outputURL else { return }
+                let finalized = await Self.waitUntilFinalized(url, limit: .seconds(30))
+                guard !Task.isCancelled, let self, self.state == .stopping else { return }
+                self.finish(finalized ? .success(url) : .failure(CocoaError(.fileWriteUnknown)))
             }
         }
+    }
+
+    /// True once the file's size is stable and it reads as a movie with a duration.
+    nonisolated static func waitUntilFinalized(_ url: URL, limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        var lastSize: Int64 = -1
+        var stableChecks = 0
+        while ContinuousClock.now < deadline {
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
+            stableChecks = size > 0 && size == lastSize ? stableChecks + 1 : 0
+            lastSize = size
+            if stableChecks >= 2 {
+                let asset = AVURLAsset(url: url)
+                if let duration = try? await asset.load(.duration), duration.seconds > 0 { return true }
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return false
     }
 
     fileprivate func finish(_ result: Result<URL, any Error>) {

@@ -17,7 +17,8 @@ nonisolated public enum CaptureMode: String, Codable, Sendable, CaseIterable {
 
     var screencaptureArguments: [String] {
         switch self {
-        case .area: ["-i", "-s"]
+        // Interactive: drag an area, or press Space to pick a window.
+        case .area: ["-i"]
         case .window: ["-i", "-w"]
         case .screen: ["-m"]
         }
@@ -41,14 +42,19 @@ public enum ScreenCapture {
         }
     }
 
-    /// Lets the user pick an area/window and returns PNG data.
-    public static func capture(_ mode: CaptureMode = .area) async throws -> Data {
+    /// Lets the user pick an area/window (or takes the screen) and returns PNG data.
+    /// `delay` is a self-timer in seconds; window shots keep their shadow unless `shadow` is false.
+    public static func capture(_ mode: CaptureMode = .area, delay: Int = 0, shadow: Bool = true) async throws -> Data {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("keystivo-capture-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
+        var arguments = mode.screencaptureArguments + ["-x"]
+        if !shadow { arguments.append("-o") }
+        if delay > 0 { arguments += ["-T", String(delay)] }
+        let finalArguments = arguments + [url.path]
         try await Task.detached {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            process.arguments = mode.screencaptureArguments + ["-x", "-o", url.path]
+            process.arguments = finalArguments
             try process.run()
             process.waitUntilExit()
         }.value

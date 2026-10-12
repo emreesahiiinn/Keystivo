@@ -61,6 +61,17 @@ final class LauncherModel {
     @ObservationIgnored private var asyncItems: [LauncherItem] = []
     /// Mode whose results are on screen (async-only lists keep them while reloading).
     @ObservationIgnored private var displayedMode: LauncherMode?
+    // Extras (LauncherExtras.swift).
+    @ObservationIgnored var exchangeRates: ExchangeRates.Table?
+    @ObservationIgnored var isLoadingRates = false
+    @ObservationIgnored var menuEntries: [MenuItemEntry] = []
+    @ObservationIgnored var menuTargetPID: pid_t?
+    var menuTargetName: String?
+    var isLoadingMenus = false
+    @ObservationIgnored var processRows: [ProcessUsage] = []
+    @ObservationIgnored var processTask: Task<Void, Never>?
+    /// Selection copied with ⌘C just before the panel opened (see LauncherController.show).
+    @ObservationIgnored var prefetchedSelection: String?
     @ObservationIgnored var windowCache: [WindowInfo] = []
     @ObservationIgnored private var pluginItems: [LauncherItem] = []
     @ObservationIgnored private var toastTask: Task<Void, Never>?
@@ -91,7 +102,19 @@ final class LauncherModel {
                 refresh()
             }
         }
-        if mode == .textActions { textInput = Self.selectedTextOrClipboard() }
+        if mode == .textActions { textInput = prefetchedSelection ?? Self.selectedTextOrClipboard() }
+        prefetchedSelection = nil
+        if mode == .menuItems { loadMenuItems() }
+        if mode == .schedule, !CalendarService.shared.hasAccess {
+            Task {
+                _ = await CalendarService.shared.requestAccess()
+                refresh()
+            }
+        }
+        if mode == .processes { startProcessSampling() } else { processTask?.cancel() }
+        if mode == .root, runtime.config.launcher.convertsCurrency, exchangeRates == nil {
+            Task { exchangeRates = await ExchangeRates.shared.cached() }
+        }
         AppCatalog.shared.refreshIfNeeded()
         PluginManager.shared.reload()
         selectedIndex = 0
@@ -193,11 +216,23 @@ final class LauncherModel {
         }
         for section in ordered {
             var list = grouped[section] ?? []
-            if section != .results && section != .clipboard && section != .snippets {
+            if section != .results && section != .clipboard {
                 list.sort { $0.score > $1.score }
             }
             if mode == .root { list = Array(list.prefix(section.limit)) }
             if !list.isEmpty { groups.append(LauncherSectionGroup(section: section, items: list)) }
+        }
+        // The same item can come from several providers (e.g. an alias and a fuzzy match):
+        // keep its best-scored copy, and give every aliasable item "Set Alias…".
+        var seen = Set<String>()
+        groups = groups.compactMap { group in
+            let unique = group.items.filter { seen.insert($0.id).inserted }.map { item -> LauncherItem in
+                guard let alias = aliasAction(for: item), !item.actions.contains(where: { $0.title == alias.title }) else { return item }
+                var copy = item
+                copy.actions.append(alias)
+                return copy
+            }
+            return unique.isEmpty ? nil : LauncherSectionGroup(section: group.section, items: unique)
         }
         sections = groups
         items = groups.flatMap(\.items)
@@ -348,11 +383,40 @@ final class LauncherModel {
 
     /// Selected text from the focused element of the frontmost app, else the clipboard.
     static func selectedTextOrClipboard() -> String {
-        if AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication {
-            let element = AXElement.application(pid: app.processIdentifier).focusedElement
-            if let text: String = element?.attribute(kAXSelectedTextAttribute), !text.isEmpty { return text }
-        }
+        if let text = axSelection() { return text }
         return NSPasteboard.general.string(forType: .string) ?? ""
+    }
+
+    private static func axSelection() -> String? {
+        guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let element = AXElement.application(pid: app.processIdentifier).focusedElement
+        guard let text: String = element?.attribute(kAXSelectedTextAttribute), !text.isEmpty else { return nil }
+        return text
+    }
+
+    static var hasAXSelection: Bool { axSelection() != nil }
+
+    /// Copies the frontmost app's selection with ⌘C and puts the clipboard back.
+    /// Nil when nothing was copied (no selection).
+    static func copySelection() async -> String? {
+        let pasteboard = NSPasteboard.general
+        let before = pasteboard.changeCount
+        let saved = pasteboard.pasteboardItems?.map { item -> NSPasteboardItem in
+            let copy = NSPasteboardItem()
+            for type in item.types { if let data = item.data(forType: type) { copy.setData(data, forType: type) } }
+            return copy
+        } ?? []
+        ClipboardMonitor.shared.markOwnWrite()
+        SyntheticInput.pressKey(KeyboardLayout.keyCode(for: "c") ?? 8, modifiers: .command)
+        for _ in 0..<15 where pasteboard.changeCount == before {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        guard pasteboard.changeCount != before else { return nil }
+        let text = pasteboard.string(forType: .string)
+        pasteboard.clearContents()
+        if !saved.isEmpty { pasteboard.writeObjects(saved) }
+        ClipboardMonitor.shared.markOwnWrite()
+        return text
     }
 
     var pluginResultItems: [LauncherItem] { pluginItems }

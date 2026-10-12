@@ -143,7 +143,7 @@ struct LauncherView: View {
 
     private var showsPreview: Bool {
         switch model.mode {
-        case .clipboard, .snippets, .textActions: true
+        case .clipboard, .snippets, .textActions, .captures, .schedule: true
         default: false
         }
     }
@@ -167,6 +167,7 @@ struct LauncherView: View {
         case .clipboard: "launcher.empty.clipboard"
         case .files: "launcher.empty.files"
         case .snippets: "launcher.empty.snippets"
+        case .menuItems: "launcher.empty.menuItems"
         default: "launcher.empty.default"
         }
     }
@@ -494,6 +495,11 @@ struct LauncherIconView: View {
         case .color(let hex):
             RoundedRectangle(cornerRadius: 6).fill(Color(hex: hex) ?? .gray).frame(width: 22, height: 22)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
+        case .glyph(let glyph):
+            Text(glyph)
+                .font(.system(size: 20))
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
         }
     }
 }

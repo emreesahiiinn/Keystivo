@@ -15,8 +15,17 @@ nonisolated public struct WindowInfo: Identifiable, Hashable, Sendable {
     /// True for windows on another Space (known only through the window server).
     public var isOnOtherSpace: Bool
     public var element: AXElement?
+    /// A running app with no open windows (Finder or Mail after closing them).
+    /// Focusing it reopens the app, like clicking its Dock icon.
+    public var isWindowless = false
 
     public var displayTitle: String { title.isEmpty ? appName : title }
+
+    /// Stand-in entry for an app without windows.
+    public static func windowless(pid: pid_t, bundleID: String?, appName: String, isHidden: Bool) -> WindowInfo {
+        WindowInfo(id: CGWindowID(UInt32.max - UInt32(bitPattern: pid)), pid: pid, bundleID: bundleID, appName: appName, title: "",
+                   frame: .zero, isMinimized: false, isAppHidden: isHidden, isOnOtherSpace: false, element: nil, isWindowless: true)
+    }
 
     public static func == (lhs: WindowInfo, rhs: WindowInfo) -> Bool { lhs.id == rhs.id && lhs.pid == rhs.pid }
     public func hash(into hasher: inout Hasher) {
@@ -26,6 +35,19 @@ nonisolated public struct WindowInfo: Identifiable, Hashable, Sendable {
 
     /// Focuses the window, switching Spaces or un-minimizing as needed.
     @MainActor public func focus() {
+        if isWindowless {
+            guard let app = NSRunningApplication(processIdentifier: pid) else { return }
+            if app.isHidden { app.unhide() }
+            // Opening a running app sends "reopen", so it shows a window as from the Dock.
+            if let url = app.bundleURL {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = true
+                NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            } else {
+                WindowFocus.activate(pid: pid)
+            }
+            return
+        }
         if let element {
             WindowFocus.focus(window: element, windowID: id, pid: pid)
         } else {
@@ -48,6 +70,8 @@ public final class WindowCatalog {
         public var includeMinimized = true
         public var includeHiddenApps = true
         public var includeOtherSpaces = true
+        /// Also list running apps that have no windows.
+        public var includeWindowlessApps = false
         public init() {}
     }
 
@@ -93,9 +117,17 @@ public final class WindowCatalog {
             }
         }
 
+        if options.includeWindowlessApps {
+            let withWindows = Set(all.map(\.pid))
+            for app in appInfo where !withWindows.contains(app.pid) && !app.name.isEmpty {
+                guard options.includeHiddenApps || !app.hidden else { continue }
+                all.append(.windowless(pid: app.pid, bundleID: app.bundleID, appName: app.name, isHidden: app.hidden))
+            }
+        }
+
         return all.sorted { lhs, rhs in
-            let left = order[lhs.id] ?? (lhs.isMinimized ? Int.max - 1 : Int.max - 2)
-            let right = order[rhs.id] ?? (rhs.isMinimized ? Int.max - 1 : Int.max - 2)
+            let left = order[lhs.id] ?? (lhs.isWindowless ? Int.max : lhs.isMinimized ? Int.max - 1 : Int.max - 2)
+            let right = order[rhs.id] ?? (rhs.isWindowless ? Int.max : rhs.isMinimized ? Int.max - 1 : Int.max - 2)
             if left != right { return left < right }
             return lhs.appName.localizedStandardCompare(rhs.appName) == .orderedAscending
         }

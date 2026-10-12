@@ -59,6 +59,50 @@ nonisolated struct LauncherSettings: Codable, Hashable, Sendable {
     var position: LauncherPosition = .upperThird
     var clearsQueryOnOpen = true
     var showsRecent = true
+    /// Keyword web searches and links ("yt cats").
+    var quicklinks: [Quicklink] = Quicklink.defaults
+    /// "100 usd to try": downloads ECB reference rates when such a query is typed.
+    var convertsCurrency = true
+    /// User aliases: item key (bundle ID, "action:…", "workflow:…", "quicklink:…") → alias.
+    var aliases: [String: String] = [:]
+}
+
+/// A keyword search or link, like Raycast quicklinks or Alfred web searches.
+/// `{query}` is replaced with the typed text (URL-encoded), `{clipboard}` with the clipboard.
+nonisolated struct Quicklink: Codable, Hashable, Sendable, Identifiable {
+    var id = UUID()
+    var name: String
+    var keyword: String
+    var url: String
+    /// Open with this app instead of the default handler.
+    var appBundleID: String?
+
+    var takesQuery: Bool { url.contains("{query}") }
+
+    /// The URL for `query`, or nil when the template doesn't form a valid URL.
+    func resolvedURL(query: String, clipboard: String? = nil) -> URL? {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+=?#/")
+        let encode = { (text: String) in text.addingPercentEncoding(withAllowedCharacters: allowed) ?? text }
+        var resolved = url.replacingOccurrences(of: "{query}", with: encode(query))
+        if resolved.contains("{clipboard}") { resolved = resolved.replacingOccurrences(of: "{clipboard}", with: encode(clipboard ?? "")) }
+        if resolved.hasPrefix("~") || resolved.hasPrefix("/") {
+            return URL(fileURLWithPath: (resolved as NSString).expandingTildeInPath)
+        }
+        guard let url = URL(string: resolved), url.scheme != nil else { return nil }
+        return url
+    }
+
+    static let defaults: [Quicklink] = [
+        Quicklink(name: "Google", keyword: "g", url: "https://www.google.com/search?q={query}"),
+        Quicklink(name: "YouTube", keyword: "yt", url: "https://www.youtube.com/results?search_query={query}"),
+        Quicklink(name: "Wikipedia", keyword: "wiki", url: "https://wikipedia.org/w/index.php?search={query}"),
+        Quicklink(name: "GitHub", keyword: "gh", url: "https://github.com/search?q={query}"),
+        Quicklink(name: "Google Maps", keyword: "map", url: "https://www.google.com/maps/search/{query}"),
+        Quicklink(name: "Google Translate", keyword: "tr", url: "https://translate.google.com/?sl=auto&text={query}"),
+        Quicklink(name: "Stack Overflow", keyword: "so", url: "https://stackoverflow.com/search?q={query}"),
+        Quicklink(name: "App Store", keyword: "as", url: "macappstore://search.itunes.apple.com/WebObjects/MZSearch.woa/wa/search?q={query}"),
+    ]
 }
 
 nonisolated struct SwitcherSettings: Codable, Hashable, Sendable {
@@ -70,6 +114,12 @@ nonisolated struct SwitcherSettings: Codable, Hashable, Sendable {
     var thumbnailWidth: Double = 240
     /// Intercept ⌘⇥ itself (requires Accessibility). Off: Keystivo uses its own shortcut.
     var replacesCommandTab = true
+    /// Running apps without windows appear too (selecting one reopens it).
+    var includesWindowlessApps = true
+    /// Apps never shown in the switcher.
+    var excludedApps: [String] = []
+    /// While one of these apps is frontmost, ⌘⇥ stays the system's (games, VMs, remote desktops).
+    var systemSwitcherApps: [String] = []
 }
 
 nonisolated struct WindowSettings: Codable, Hashable, Sendable {
@@ -80,6 +130,34 @@ nonisolated struct WindowSettings: Codable, Hashable, Sendable {
     var rules: [AppWindowRule] = []
     var dragSnap = DragSnapSettings()
     var focusFollowsMouse = FocusFollowsMouseSettings()
+    var modifierDrag = ModifierDragSettings()
+    /// Repeating ← / → half at the screen edge continues onto the next display.
+    var repeatMovesAcrossDisplays = false
+    /// A snapped window gets its earlier size back when dragged away.
+    var restoresSizeOnDrag = true
+}
+
+/// Hold modifiers and drag anywhere in a window to move it, right-drag to resize.
+nonisolated struct ModifierDragSettings: Codable, Hashable, Sendable {
+    var isEnabled = true
+    var modifiers: ModifierChoice = .controlOption
+    var raisesWindow = true
+    var excludedApps: [String] = []
+}
+
+nonisolated enum ModifierChoice: String, Codable, Hashable, Sendable, CaseIterable {
+    case controlOption, commandControl, commandOption, controlOptionCommand
+
+    var modifiers: KeyModifiers {
+        switch self {
+        case .controlOption: [.control, .option]
+        case .commandControl: [.command, .control]
+        case .commandOption: [.command, .option]
+        case .controlOptionCommand: [.control, .option, .command]
+        }
+    }
+
+    var symbols: String { modifiers.symbols }
 }
 
 /// The window under the pointer becomes active once the pointer rests on it.
@@ -112,7 +190,10 @@ nonisolated struct InputSettings: Codable, Hashable, Sendable {
 }
 
 nonisolated enum MonitorMetric: String, Codable, Hashable, Sendable, CaseIterable {
-    case cpu, memory, network, disk
+    case cpu, memory, network, disk, gpu, sensors
+
+    /// Needs GPU, temperature or fan readings.
+    var usesHardware: Bool { self == .gpu || self == .sensors }
     var titleKey: String { "monitor.metric.\(rawValue)" }
 }
 
@@ -131,6 +212,12 @@ nonisolated struct ToolsSettings: Codable, Hashable, Sendable {
     var pinsAfterCapture = false
     /// Open the annotation editor after "Capture area" (CleanShot-style).
     var annotatesAfterCapture = false
+    /// Also save screenshots as PNG files here (empty: clipboard only).
+    var screenshotFolder = ""
+    /// Window screenshots keep the window shadow.
+    var screenshotShadow = true
+    /// After a screenshot, show a thumbnail to drag, copy, save, annotate or pin (CleanShot-style).
+    var showsQuickAccess = true
     // Screen recording
     var recordingFolder = "~/Movies/Keystivo"
     var recordingShowsCursor = true
@@ -139,6 +226,8 @@ nonisolated struct ToolsSettings: Codable, Hashable, Sendable {
     var recordingUsesHEVC = true
     var recordingCountdown = true
     var recordingAfter: RecordingFinishAction = .reveal
+    var recordingFormat: RecordingFormat = .mov
+    var recordingFrameRate = 60
     // Displays
     /// Brightness keys adjust external monitors (DDC or software dimming).
     var brightnessKeysControlExternal = true

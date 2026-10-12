@@ -197,10 +197,7 @@ private struct GestureBindingRow: View {
             .font(.caption)
         case .mouse(let gesture):
             HStack {
-                Picker("", selection: Binding(get: { gesture.button }, set: { binding.trigger = .mouse(MouseGesture(button: $0, strokes: gesture.strokes)) })) {
-                    ForEach(MouseGestureButton.allCases, id: \.self) { Text(L($0.titleKey)).tag($0) }
-                }
-                .labelsHidden().fixedSize()
+                // Mouse gestures use the one button chosen above, so there's no per-gesture button.
                 TextField(L("gesturesSettings.strokes"), text: Binding(get: { gesture.strokes }, set: { binding.trigger = .mouse(MouseGesture(button: gesture.button, strokes: String($0.uppercased().filter { "UDLR".contains($0) }.prefix(6)))) }))
                     .font(.system(.callout, design: .monospaced))
                     .frame(width: 100)
@@ -315,7 +312,7 @@ struct SystemPage: View {
                     Text(L("cc.onPower"))
                 }
                 LabeledContent(L("systemSettings.lowPower"), value: L(power.isLowPowerMode ? "common.on" : "common.off"))
-                Picker(L("systemSettings.keepAwake"), selection: Binding(get: { KeepAwakeController.shared.mode }, set: { KeepAwakeController.shared.set($0) })) {
+                Picker(L("systemSettings.keepAwake"), selection: Binding(get: { KeepAwakeController.shared.mode }, set: { KeepAwakeController.shared.isSetByProfile = false; KeepAwakeController.shared.set($0) })) {
                     Text(L("keepAwake.off.title")).tag(KeepAwakeMode.off)
                     Text(L(KeepAwakeMode.system.titleKey)).tag(KeepAwakeMode.system)
                     Text(L(KeepAwakeMode.display.titleKey)).tag(KeepAwakeMode.display)

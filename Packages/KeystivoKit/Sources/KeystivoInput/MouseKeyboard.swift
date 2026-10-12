@@ -250,23 +250,44 @@ public enum KeyRemapper {
         "{\"VendorID\":\(vendorID),\"ProductID\":\(productID)}"
     }
 
+    /// Devices that got their own mapping last time, so `reset` can clear them too.
+    nonisolated(unsafe) private static var mappedDevices: Set<[Int]> = []
+
+    /// Global mappings plus a device's own; the device's win for the same key.
+    /// (A per-device mapping replaces the global one on that keyboard, so it must include it.)
+    nonisolated public static func merged(global: [(UInt64, UInt64)], device: [(UInt64, UInt64)]) -> [(UInt64, UInt64)] {
+        let overridden = Set(device.map(\.0))
+        return global.filter { !overridden.contains($0.0) } + device
+    }
+
     /// Applies global remaps (+ the hyper trigger) and per-device remaps.
     public static func apply(remaps: [KeyRemap], hyper: HyperKeySettings) async throws {
         var global: [(UInt64, UInt64)] = remaps.filter { $0.isEnabled && $0.vendorID == nil }.map { ($0.from, $0.to) }
-        if hyper.isEnabled { global.append((hyper.trigger.hidUsage, hyperIntermediate)) }
+        if hyper.isEnabled, !global.contains(where: { $0.0 == hyper.trigger.hidUsage }) {
+            global.append((hyper.trigger.hidUsage, hyperIntermediate))
+        }
         try await run(["property", "--set", mappingJSON(global)])
         let perDevice = Dictionary(grouping: remaps.filter { $0.isEnabled && $0.vendorID != nil && $0.productID != nil }) {
-            "\($0.vendorID!)-\($0.productID!)"
+            [$0.vendorID!, $0.productID!]
         }
-        for remaps in perDevice.values {
-            guard let first = remaps.first, let vendor = first.vendorID, let product = first.productID else { continue }
-            try await run(["property", "--matching", matchingJSON(vendorID: vendor, productID: product), "--set", mappingJSON(remaps.map { ($0.from, $0.to) })])
+        // Devices whose own mapping was removed go back to the global one.
+        for device in mappedDevices where perDevice[device] == nil {
+            try? await run(["property", "--matching", matchingJSON(vendorID: device[0], productID: device[1]), "--set", mappingJSON(global)])
         }
+        for (device, remaps) in perDevice {
+            let pairs = merged(global: global, device: remaps.map { ($0.from, $0.to) })
+            try await run(["property", "--matching", matchingJSON(vendorID: device[0], productID: device[1]), "--set", mappingJSON(pairs)])
+        }
+        mappedDevices = Set(perDevice.keys)
     }
 
     /// Removes every mapping Keystivo installed for this session.
     public static func reset() async {
         try? await run(["property", "--set", mappingJSON([])])
+        for device in mappedDevices {
+            try? await run(["property", "--matching", matchingJSON(vendorID: device[0], productID: device[1]), "--set", mappingJSON([])])
+        }
+        mappedDevices = []
     }
 
     private static func run(_ arguments: [String]) async throws {

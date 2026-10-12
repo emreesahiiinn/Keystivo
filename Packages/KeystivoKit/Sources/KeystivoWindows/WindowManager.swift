@@ -44,6 +44,10 @@ public final class WindowManager {
     public var cyclesOnRepeat = true
     /// Moving to another display keeps the snapped position instead of scaling.
     public var preserveSnapAcrossDisplays = true
+    /// Repeating ← / → half at the screen edge continues onto the neighboring display.
+    public var repeatMovesAcrossDisplays = false
+    /// A snapped window gets its earlier size back when it's dragged away.
+    public var restoresSizeOnDrag = true
 
     public private(set) var moves: [WindowMove] = []
 
@@ -64,6 +68,14 @@ public final class WindowManager {
 
     public func snapFocused(_ position: SnapPosition) throws(WindowManagerError) {
         let window = try focusedWindow()
+        // Already in this half: continue onto the display on that side (Rectangle-style).
+        if repeatMovesAcrossDisplays, let id = window.windowID, snapped[id] == position,
+           position == .leftHalf || position == .rightHalf,
+           let current = window.frame, let source = ScreenGeometry.screen(forAXRect: current),
+           let neighbor = screen(from: source, target: position == .leftHalf ? .left : .right), neighbor != source {
+            snap(window, to: position == .leftHalf ? .rightHalf : .leftHalf, on: neighbor)
+            return
+        }
         var target = position
         if cyclesOnRepeat, let last = lastSnap, let id = window.windowID, last.windowID == id,
            Date.now.timeIntervalSince(last.date) < 1.5, let next = SnapGeometry.cycle(after: last.position),
@@ -101,6 +113,56 @@ public final class WindowManager {
         originalFrames[id] = nil
         apply(original, to: window, from: current)
     }
+
+    /// The size a window had before Keystivo snapped it, if it's still snapped.
+    public func presnapFrame(of windowID: CGWindowID) -> CGRect? {
+        snapped[windowID] == nil ? nil : originalFrames[windowID]
+    }
+
+    /// Forgets snap state (e.g. the user moved the window away by hand).
+    public func forgetSnap(of windowID: CGWindowID) {
+        snapped[windowID] = nil
+        originalFrames[windowID] = nil
+    }
+
+    // MARK: Edges
+
+    public enum Edge: String, CaseIterable, Sendable { case left, right, top, bottom }
+
+    /// Moves the window flush against an edge of its screen without resizing it.
+    public func moveFocused(toEdge edge: Edge) throws(WindowManagerError) {
+        let window = try focusedWindow()
+        guard let current = window.frame, let screen = ScreenGeometry.screen(forAXRect: current) ?? NSScreen.main else { return }
+        let area = ScreenGeometry.visibleFrameAX(of: screen).insetBy(dx: gap, dy: gap)
+        var frame = current
+        switch edge {
+        case .left: frame.origin.x = area.minX
+        case .right: frame.origin.x = area.maxX - frame.width
+        case .top: frame.origin.y = area.minY
+        case .bottom: frame.origin.y = area.maxY - frame.height
+        }
+        apply(frame.integral, to: window, from: current)
+    }
+
+    /// Grows or shrinks only the width or only the height, around the center.
+    public func resizeFocused(axis: Axis, larger: Bool, step: CGFloat = 60) throws(WindowManagerError) {
+        let window = try focusedWindow()
+        guard let current = window.frame, let screen = ScreenGeometry.screen(forAXRect: current) ?? NSScreen.main else { return }
+        let area = ScreenGeometry.visibleFrameAX(of: screen)
+        let delta = larger ? step : -step
+        var frame = current
+        switch axis {
+        case .horizontal:
+            frame.size.width = min(max(current.width + delta, 200), area.width)
+            frame.origin.x = min(max(current.midX - frame.width / 2, area.minX), area.maxX - frame.width)
+        case .vertical:
+            frame.size.height = min(max(current.height + delta, 150), area.height)
+            frame.origin.y = min(max(current.midY - frame.height / 2, area.minY), area.maxY - frame.height)
+        }
+        apply(frame.integral, to: window, from: current)
+    }
+
+    public enum Axis: Sendable { case horizontal, vertical }
 
     // MARK: Displays
 

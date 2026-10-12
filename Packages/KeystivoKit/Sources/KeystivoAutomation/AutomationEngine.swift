@@ -23,21 +23,29 @@ public final class AutomationEngine {
     public var workflows: [Workflow] = [] {
         didSet {
             onChange?(workflows)
-            registerHotkeys()
-            scheduler.update(workflows: activeWorkflows)
+            refreshTriggers()
         }
     }
     public var isEnabled = true {
-        didSet { registerHotkeys(); scheduler.update(workflows: activeWorkflows) }
+        didSet { refreshTriggers() }
     }
     public var activeProfileID: UUID? {
-        didSet { registerHotkeys(); scheduler.update(workflows: activeWorkflows) }
+        didSet { refreshTriggers() }
+    }
+
+    private func refreshTriggers() {
+        registerHotkeys()
+        scheduler.update(workflows: activeWorkflows)
+        TypedTextTriggers.shared.triggers = Set(activeWorkflows.flatMap { $0.triggers.compactMap(\.typedText) })
     }
     public private(set) var runs: [WorkflowRun] = []
     public private(set) var runningWorkflowIDs: Set<UUID> = []
 
     @ObservationIgnored public var onChange: (([Workflow]) -> Void)?
     @ObservationIgnored public var environment: (any AutomationEnvironment)?
+    /// UI hooks for interactive steps (the engine itself has no UI).
+    @ObservationIgnored public var onAskInput: (@MainActor (_ prompt: String, _ workflow: String) async -> String?)?
+    @ObservationIgnored public var onShowText: (@MainActor (_ text: String, _ workflow: String) -> Void)?
     @ObservationIgnored private var hotkeyTokens: [HotKeyToken] = []
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private let scheduler = AutomationScheduler()
@@ -46,6 +54,8 @@ public final class AutomationEngine {
     public init(registry: ActionRegistry = .shared) {
         self.registry = registry
         scheduler.onEvent = { [weak self] event in self?.handle(event) }
+        TypedTextTriggers.shared.onMatch = { [weak self] text in self?.handle(.typedText(text)) }
+        EventTapManager.shared.add(TypedTextTriggers.shared)
     }
 
     public var activeWorkflows: [Workflow] {
@@ -61,8 +71,16 @@ public final class AutomationEngine {
         }
     }
 
+    /// `keystivo://run/<name>?key=value`: runs workflows with that URL trigger;
+    /// the query items become {{key}} variables.
+    public func handleURL(name: String, parameters: [String: String]) {
+        for workflow in activeWorkflows where workflow.triggers.contains(where: { $0.matches(.url(name)) }) {
+            run(workflow, trigger: "keystivo://run/\(name)", variables: parameters)
+        }
+    }
+
     /// Runs a workflow now (manual triggers, launcher, other workflows).
-    public func run(_ workflow: Workflow, trigger: String = "manual") {
+    public func run(_ workflow: Workflow, trigger: String = "manual", variables: [String: String] = [:]) {
         if workflow.preventsOverlap, runningWorkflowIDs.contains(workflow.id) {
             record(WorkflowRun(id: UUID(), workflowID: workflow.id, workflowName: workflow.name, trigger: trigger, started: .now, finished: .now, status: .skipped, message: L("automation.run.overlap")))
             return
@@ -76,8 +94,10 @@ public final class AutomationEngine {
         tasks[runID] = Task {
             var status = WorkflowRun.Status.succeeded
             var message: String?
+            let state = RunState(workflow: workflow.name, trigger: trigger)
+            state.variables.merge(variables) { _, new in new }
             do {
-                try await execute(workflow.steps, workflow: workflow, depth: 0)
+                try await execute(workflow.steps, workflow: workflow, depth: 0, state: state)
             } catch is CancellationError {
                 status = .cancelled
             } catch StopSignal.stop {
@@ -104,24 +124,66 @@ public final class AutomationEngine {
 
     private enum StopSignal: Error { case stop }
 
-    private func execute(_ steps: [WorkflowStep], workflow: Workflow, depth: Int) async throws {
+    /// Variables of one run, shared by its steps (and nested workflows).
+    final class RunState {
+        var variables: [String: String]
+        init(workflow: String, trigger: String) { variables = ["workflow": workflow, "trigger": trigger] }
+    }
+
+    private func evaluate(_ condition: ConditionSpec, state: RunState) -> Bool {
+        guard let environment else { return false }
+        return ConditionEvaluator.evaluate(condition, in: environment, variables: state.variables)
+    }
+
+    private func execute(_ steps: [WorkflowStep], workflow: Workflow, depth: Int, state: RunState) async throws {
         guard depth < 8 else { throw ActionError.failed(L("automation.error.recursion")) }
         for step in steps where step.isEnabled {
             try Task.checkCancellation()
             do {
                 switch step.kind {
                 case .action(let invocation):
-                    try await registry.perform(invocation, context: ActionContext(source: .workflow, variables: ["workflow": workflow.name]))
+                    let sink = ActionOutputSink()
+                    let expanded = Placeholders.expand(invocation, variables: state.variables)
+                    try await registry.perform(expanded, context: ActionContext(source: .workflow, variables: state.variables, output: sink))
+                    if let output = sink.text {
+                        state.variables["output"] = output
+                        if let name = step.outputVariable?.trimmingCharacters(in: .whitespaces), !name.isEmpty { state.variables[name] = output }
+                    }
                 case .delay(let seconds):
                     try await Task.sleep(for: .milliseconds(Int(max(seconds, 0) * 1000)))
                 case .condition(let condition, let thenSteps, let elseSteps):
-                    let passed = environment.map { ConditionEvaluator.evaluate(condition, in: $0) } ?? false
-                    try await execute(passed ? thenSteps : elseSteps, workflow: workflow, depth: depth + 1)
+                    try await execute(evaluate(condition, state: state) ? thenSteps : elseSteps, workflow: workflow, depth: depth + 1, state: state)
                 case .runWorkflow(let id):
-                    guard let nested = workflows.first(where: { $0.id == id }), nested.id != workflow.id else { continue }
-                    try await execute(nested.steps, workflow: nested, depth: depth + 1)
+                    // The nested workflow's own switch and condition still apply.
+                    guard let nested = workflows.first(where: { $0.id == id }) else { throw ActionError.notAvailable(L("automation.error.missingWorkflow")) }
+                    guard nested.id != workflow.id, nested.isEnabled else { continue }
+                    if let condition = nested.condition, !evaluate(condition, state: state) { continue }
+                    try await execute(nested.steps, workflow: nested, depth: depth + 1, state: state)
                 case .stop:
                     throw StopSignal.stop
+                case .setVariable(let name, let value):
+                    let key = name.trimmingCharacters(in: .whitespaces)
+                    if !key.isEmpty { state.variables[key] = Placeholders.expand(value, variables: state.variables) }
+                case .repeatTimes(let times, let inner):
+                    for index in 1...max(1, min(times, 1000)) {
+                        try Task.checkCancellation()
+                        state.variables["index"] = String(index)
+                        try await execute(inner, workflow: workflow, depth: depth + 1, state: state)
+                    }
+                case .waitUntil(let condition, let timeout):
+                    let deadline = Date.now.addingTimeInterval(max(timeout, 0.5))
+                    while !evaluate(condition, state: state) {
+                        guard Date.now < deadline else { throw ActionError.failed(L("automation.error.waitTimeout")) }
+                        try await Task.sleep(for: .milliseconds(250))
+                    }
+                case .askInput(let prompt, let variable):
+                    guard let onAskInput, let answer = await onAskInput(Placeholders.expand(prompt, variables: state.variables), workflow.name) else {
+                        throw CancellationError()
+                    }
+                    let key = variable.trimmingCharacters(in: .whitespaces)
+                    state.variables[key.isEmpty ? "input" : key] = answer
+                case .showText(let text):
+                    onShowText?(Placeholders.expand(text, variables: state.variables), workflow.name)
                 }
             } catch let error where !(error is CancellationError) && !(error is StopSignal) && step.continueOnError {
                 DiagnosticsCenter.shared.record(.warning, module: "Automation", error.localizedDescription)
@@ -151,7 +213,7 @@ public final class AutomationEngine {
         hotkeyTokens.removeAll()
         var seen = Set<KeyCombo>()
         for workflow in activeWorkflows {
-            for combo in workflow.hotkeys where seen.insert(combo).inserted {
+            for combo in workflow.hotkeys where !combo.isUnset && seen.insert(combo).inserted {
                 do {
                     hotkeyTokens.append(try HotKeyCenter.shared.register(combo) { [weak self] in
                         self?.handle(.hotkey(combo))

@@ -18,6 +18,7 @@ public final class PowerMonitor {
     public private(set) var thermalState = ProcessInfo.processInfo.thermalState
     public private(set) var cycleCount: Int?
     public private(set) var batteryHealth: String?
+    public private(set) var batteryDetails: BatteryDetails?
 
     /// (isOnAC, level, previousLevel)
     @ObservationIgnored public var onChange: (@MainActor (_ onAC: Bool, _ level: Int?, _ previousLevel: Int?, _ sourceChanged: Bool) -> Void)?
@@ -68,15 +69,21 @@ public final class PowerMonitor {
             batteryHealth = description[kIOPSBatteryHealthKey] as? String
         }
         if !hasBattery { batteryLevel = nil }
-        cycleCount = Self.readCycleCount()
+        let details = hasBattery ? Self.readDetails() : nil
+        cycleCount = details?.cycleCount
+        batteryDetails = details
         if notify { onChange?(isOnAC, batteryLevel, previousLevel, previousAC != isOnAC) }
     }
 
-    private static func readCycleCount() -> Int? {
+    /// Everything AppleSmartBattery reports that's worth showing (coconutBattery-style).
+    private static func readDetails() -> BatteryDetails? {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
         guard service != 0 else { return nil }
         defer { IOObjectRelease(service) }
-        return IORegistryEntryCreateCFProperty(service, "CycleCount" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Int
+        var properties: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS,
+              let dictionary = properties?.takeRetainedValue() as? [String: Any] else { return nil }
+        return BatteryDetails(dictionary)
     }
 
     public var symbolName: String {
@@ -111,6 +118,8 @@ public final class KeepAwakeController {
 
     public private(set) var mode: KeepAwakeMode = .off
     public private(set) var expiresAt: Date?
+    /// Whether a power profile (not the user) chose the current mode.
+    public var isSetByProfile = false
     @ObservationIgnored private var assertionID: IOPMAssertionID = 0
     @ObservationIgnored private var expiryTask: Task<Void, Never>?
 
@@ -137,7 +146,10 @@ public final class KeepAwakeController {
         }
     }
 
-    public func toggle() { set(mode == .off ? .system : .off) }
+    public func toggle() {
+        isSetByProfile = false
+        set(mode == .off ? .system : .off)
+    }
 
     private func release() {
         expiryTask?.cancel()
@@ -192,12 +204,71 @@ nonisolated public struct PowerProfile: Codable, Hashable, Sendable, Identifiabl
 
 public enum PowerProfileApplier {
     public static func apply(_ profile: PowerProfile, keepAwake: KeepAwakeController = .shared) {
-        keepAwake.set(profile.keepAwake)
+        // A profile without keep-awake doesn't cancel one the user turned on.
+        if profile.keepAwake != .off || keepAwake.isSetByProfile || keepAwake.mode == .off {
+            keepAwake.set(profile.keepAwake)
+            keepAwake.isSetByProfile = profile.keepAwake != .off
+        }
         for bundleID in profile.quitApps {
             NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).forEach { $0.terminate() }
         }
         for bundleID in profile.hideApps {
             NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).forEach { $0.hide() }
+        }
+    }
+}
+
+
+/// Battery health and live power figures from AppleSmartBattery. Pure parsing, unit-tested.
+nonisolated public struct BatteryDetails: Equatable, Sendable {
+    /// Full-charge capacity now and as designed (mAh).
+    public var maxCapacity: Int?
+    public var designCapacity: Int?
+    public var cycleCount: Int?
+    public var designCycleCount: Int?
+    /// °C.
+    public var temperature: Double?
+    /// Positive while charging, negative while discharging (W).
+    public var power: Double?
+    /// The connected adapter's rating (W).
+    public var adapterWatts: Int?
+    public var adapterName: String?
+    public var serialNumber: String?
+    public var manufactureDate: Date?
+
+    /// Remaining capacity versus new, in percent.
+    public var health: Int? {
+        guard let maxCapacity, let designCapacity, designCapacity > 0 else { return nil }
+        return Int((Double(maxCapacity) / Double(designCapacity) * 100).rounded())
+    }
+
+    public init(_ registry: [String: Any]) {
+        // Apple Silicon reports the real full-charge capacity as AppleRawMaxCapacity;
+        // MaxCapacity is a percentage there.
+        maxCapacity = registry["AppleRawMaxCapacity"] as? Int ?? (registry["MaxCapacity"] as? Int).flatMap { $0 > 100 ? $0 : nil }
+        designCapacity = registry["DesignCapacity"] as? Int
+        cycleCount = registry["CycleCount"] as? Int
+        designCycleCount = registry["DesignCycleCount9C"] as? Int
+        // Hundredths of a degree Celsius (3050 = 30.5 °C).
+        if let raw = registry["Temperature"] as? Int, raw > 0 {
+            temperature = Double(raw) / 100
+        }
+        if let voltage = registry["Voltage"] as? Int, let amperage = registry["Amperage"] as? Int {
+            let amps = Double(Int16(truncatingIfNeeded: amperage)) / 1000
+            power = Double(voltage) / 1000 * amps
+        }
+        if let adapter = registry["AdapterDetails"] as? [String: Any] {
+            adapterWatts = adapter["Watts"] as? Int
+            adapterName = adapter["Name"] as? String ?? adapter["Description"] as? String
+        }
+        serialNumber = registry["Serial"] as? String ?? registry["BatterySerialNumber"] as? String
+        // ManufactureDate packs (year − 1980) << 9 | month << 5 | day.
+        if let packed = registry["ManufactureDate"] as? Int, packed > 0 {
+            var components = DateComponents()
+            components.year = 1980 + (packed >> 9)
+            components.month = (packed >> 5) & 0xF
+            components.day = packed & 0x1F
+            manufactureDate = Calendar(identifier: .gregorian).date(from: components)
         }
     }
 }

@@ -64,6 +64,18 @@ struct SwitcherPage: View {
                 Toggle(L("switcherSettings.minimized"), isOn: $runtime.config.switcher.includesMinimized)
                 Toggle(L("switcherSettings.hidden"), isOn: $runtime.config.switcher.includesHiddenApps)
                 Toggle(L("switcherSettings.otherSpaces"), isOn: $runtime.config.switcher.includesOtherSpaces)
+                Toggle(L("switcherSettings.windowless"), isOn: $runtime.config.switcher.includesWindowlessApps)
+                VStack(alignment: .leading) {
+                    Text(L("switcherSettings.excluded"))
+                    AppListEditor(bundleIDs: $runtime.config.switcher.excludedApps)
+                }
+            }
+            Section {
+                AppListEditor(bundleIDs: $runtime.config.switcher.systemSwitcherApps)
+            } header: {
+                Text(L("switcherSettings.systemApps"))
+            } footer: {
+                Text(L("switcherSettings.systemAppsFooter")).font(.caption).foregroundStyle(.secondary)
             }
             Section(L("switcherSettings.keys")) {
                 Text(L("switcherSettings.keysHelp")).font(.callout).foregroundStyle(.secondary)
@@ -84,8 +96,13 @@ struct WindowsPage: View {
         ("windowsSettings.halves", [.leftHalf, .rightHalf, .topHalf, .bottomHalf]),
         ("windowsSettings.thirds", [.firstThird, .centerThird, .lastThird, .firstTwoThirds, .centerTwoThirds, .lastTwoThirds]),
         ("windowsSettings.quarters", [.topLeftQuarter, .topRightQuarter, .bottomLeftQuarter, .bottomRightQuarter]),
+        ("windowsSettings.fourths", [.firstFourth, .secondFourth, .thirdFourth, .lastFourth]),
+        ("windowsSettings.sixths", [.topLeftSixth, .topCenterSixth, .topRightSixth, .bottomLeftSixth, .bottomCenterSixth, .bottomRightSixth]),
         ("windowsSettings.other", [.maximize, .almostMaximize, .maximizeHeight, .center, .reasonableSize]),
     ]
+
+    private let moveActions = ["windows.edge.left", "windows.edge.right", "windows.edge.top", "windows.edge.bottom",
+                               "windows.wider", "windows.narrower", "windows.taller", "windows.shorter"]
 
     var body: some View {
         Form {
@@ -103,6 +120,24 @@ struct WindowsPage: View {
                 Text(L("dragSnap.title"))
             } footer: {
                 Text(L("dragSnap.footer")).font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle(L("modifierDrag.enabled"), isOn: $runtime.config.windows.modifierDrag.isEnabled)
+                Picker(L("modifierDrag.keys"), selection: $runtime.config.windows.modifierDrag.modifiers) {
+                    ForEach(ModifierChoice.allCases, id: \.self) { Text($0.symbols).tag($0) }
+                }
+                .disabled(!runtime.config.windows.modifierDrag.isEnabled)
+                Toggle(L("modifierDrag.raise"), isOn: $runtime.config.windows.modifierDrag.raisesWindow)
+                    .disabled(!runtime.config.windows.modifierDrag.isEnabled)
+                VStack(alignment: .leading) {
+                    Text(L("modifierDrag.excluded"))
+                    AppListEditor(bundleIDs: $runtime.config.windows.modifierDrag.excludedApps)
+                }
+                .disabled(!runtime.config.windows.modifierDrag.isEnabled)
+            } header: {
+                Text(L("modifierDrag.title"))
+            } footer: {
+                Text(L("modifierDrag.footer", runtime.config.windows.modifierDrag.modifiers.symbols)).font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Toggle(L("focusFollows.enabled"), isOn: $runtime.config.windows.focusFollowsMouse.isEnabled)
@@ -132,6 +167,8 @@ struct WindowsPage: View {
                     Slider(value: $runtime.config.windows.gap, in: 0...40, step: 2).frame(width: 220)
                 }
                 Toggle(L("windowsSettings.cycle"), isOn: $runtime.config.windows.cyclesOnRepeat)
+                Toggle(L("windowsSettings.repeatAcrossDisplays"), isOn: $runtime.config.windows.repeatMovesAcrossDisplays)
+                Toggle(L("windowsSettings.restoreOnDrag"), isOn: $runtime.config.windows.restoresSizeOnDrag)
                 Toggle(L("windowsSettings.preserveSnap"), isOn: $runtime.config.windows.preservesSnapAcrossDisplays)
             }
             ForEach(snapGroups, id: \.0) { group in
@@ -142,6 +179,15 @@ struct WindowsPage: View {
                         } label: {
                             Label(L(position.titleKey), systemImage: position.symbolName)
                         }
+                    }
+                }
+            }
+            Section(L("windowsSettings.moveResize")) {
+                ForEach(moveActions, id: \.self) { id in
+                    LabeledContent {
+                        ActionShortcutField(runtime: runtime, actionID: id)
+                    } label: {
+                        Label(L("action.\(id)"), systemImage: ActionRegistry.shared.descriptor(id)?.symbolName ?? "macwindow")
                     }
                 }
             }

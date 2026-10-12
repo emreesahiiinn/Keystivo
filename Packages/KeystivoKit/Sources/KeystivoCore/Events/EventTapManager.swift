@@ -165,7 +165,7 @@ public enum SyntheticInput {
 
     /// Simulates ⌘V in the frontmost application.
     public static func paste() {
-        pressKey(UInt16(9) /* kVK_ANSI_V */, modifiers: .command)
+        pressKey(KeyboardLayout.keyCode(for: "v") ?? 9 /* kVK_ANSI_V */, modifiers: .command)
     }
 
     public static func typeText(_ text: String) {
@@ -180,7 +180,11 @@ public enum SyntheticInput {
         }
     }
 
-    public enum MouseButton { case left, right, middle }
+    public enum MouseButton {
+        case left, right, middle
+        /// Extra buttons by CGEvent button number (3 = back, 4 = forward).
+        case other(Int64)
+    }
 
     public static func click(at point: CGPoint, button: MouseButton = .left, clickCount: Int = 1, modifiers: KeyModifiers = []) {
         let source = source()
@@ -188,10 +192,15 @@ public enum SyntheticInput {
         case .left: (.leftMouseDown, .leftMouseUp, .left)
         case .right: (.rightMouseDown, .rightMouseUp, .right)
         case .middle: (.otherMouseDown, .otherMouseUp, .center)
+        case .other(let number): (.otherMouseDown, .otherMouseUp, CGMouseButton(rawValue: UInt32(number)) ?? .center)
         }
         for index in 1...max(clickCount, 1) {
             let down = CGEvent(mouseEventSource: source, mouseType: downType, mouseCursorPosition: point, mouseButton: cgButton)
             let up = CGEvent(mouseEventSource: source, mouseType: upType, mouseCursorPosition: point, mouseButton: cgButton)
+            if case .other(let number) = button {
+                down?.setIntegerValueField(.mouseEventButtonNumber, value: number)
+                up?.setIntegerValueField(.mouseEventButtonNumber, value: number)
+            }
             down?.setIntegerValueField(.mouseEventClickState, value: Int64(index))
             up?.setIntegerValueField(.mouseEventClickState, value: Int64(index))
             down?.flags = modifiers.cgFlags

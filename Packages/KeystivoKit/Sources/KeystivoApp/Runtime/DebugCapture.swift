@@ -153,4 +153,85 @@ enum FocusFollowsMouseSelfTest {
         if let originalApp { WindowFocus.activate(pid: originalApp.processIdentifier) }
     }
 }
+/// Developer aid: drags another app's window with ⌃⌥ (move) and ⌃⌥ right-drag
+/// (resize) through real events, checks the result and restores the window.
+enum ModifierDragSelfTest {
+    static func run(output: URL) async {
+        var log: [String] = []
+        let engine = ModifierDragEngine.shared
+        engine.modifiers = [.control, .option]
+        engine.raisesWindow = false
+        engine.isEnabled = true
+        let originalPoint = CGEvent(source: nil)?.location ?? .zero
+        defer {
+            engine.isEnabled = false
+            try? log.joined(separator: "\n").write(to: output, atomically: true, encoding: .utf8)
+        }
+        let screen = NSScreen.screens.first?.frame.size ?? .zero
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        // A movable window (smaller than the screen); brought to the front first.
+        // `-KSTestTargetBundle com.apple.finder`: only that app's windows (front first).
+        let targetBundle = UserDefaults.standard.string(forKey: "KSTestTargetBundle")
+        let candidates = PointerWindowResolver.onScreenWindows().filter { window in
+            window.layer == 0 && window.pid != getpid() && window.bounds.width > 300
+                && window.bounds.width < screen.width - 200 && window.bounds.height < screen.height - 200
+                && (targetBundle == nil || NSRunningApplication(processIdentifier: window.pid)?.bundleIdentifier == targetBundle)
+        }
+        // Bring each candidate to the front and find it under the pointer, as the engine does.
+        var found: (AXElement, CGRect)?
+        var notes: [String] = []
+        for candidate in candidates {
+            WindowFocus.focus(window: AXElement.application(pid: candidate.pid), windowID: candidate.id, pid: candidate.pid)
+            try? await Task.sleep(for: .milliseconds(600))
+            let center = CGPoint(x: candidate.bounds.midX, y: candidate.bounds.midY)
+            let hit = AXElement.element(at: center)
+            let topmost = PointerWindowResolver.window(at: center, in: PointerWindowResolver.onScreenWindows(), passThrough: FocusFollowsMouse.ownPassThroughWindows())
+            notes.append("\(NSRunningApplication(processIdentifier: candidate.pid)?.localizedName ?? "?") \(candidate.id) \(candidate.bounds): hit=\(hit?.role ?? "nil") pid=\(hit?.pid ?? -1) topmost=\(topmost.map { "\($0.id)/\($0.pid)" } ?? "nil")")
+            if let hit, let window = hit.role == kAXWindowRole ? hit : hit.element(kAXWindowAttribute),
+               window.pid == candidate.pid, let frame = window.frame {
+                found = (window, frame)
+                break
+            }
+        }
+        log += notes
+        defer { if let frontApp { WindowFocus.activate(pid: frontApp.processIdentifier) } }
+        guard let (element, original) = found else {
+            log.append("SKIP: no movable window found under the pointer (\(candidates.count) candidates)")
+            return
+        }
+        log.append("Window: \(NSRunningApplication(processIdentifier: element.pid ?? 0)?.localizedName ?? "?") \(original)")
+        func post(_ type: CGEventType, _ point: CGPoint, button: CGMouseButton) {
+            let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button)
+            event?.flags = [.maskControl, .maskAlternate]
+            event?.post(tap: .cghidEventTap)
+        }
+        func drag(from start: CGPoint, by delta: CGSize, right: Bool) async {
+            post(right ? .rightMouseDown : .leftMouseDown, start, button: right ? .right : .left)
+            try? await Task.sleep(for: .milliseconds(150))
+            for step in 1...10 {
+                let t = CGFloat(step) / 10
+                post(right ? .rightMouseDragged : .leftMouseDragged, CGPoint(x: start.x + delta.width * t, y: start.y + delta.height * t), button: right ? .right : .left)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            post(right ? .rightMouseUp : .leftMouseUp, CGPoint(x: start.x + delta.width, y: start.y + delta.height), button: right ? .right : .left)
+            try? await Task.sleep(for: .milliseconds(400))
+        }
+
+        let center = CGPoint(x: original.midX, y: original.midY)
+        await drag(from: center, by: CGSize(width: 80, height: 40), right: false)
+        let moved = element.frame ?? .zero
+        let moveOK = abs(moved.minX - original.minX - 80) <= 2 && abs(moved.minY - original.minY - 40) <= 2 && moved.size == original.size
+        log.append((moveOK ? "PASS" : "FAIL") + " ⌃⌥ drag moves the window by (80, 40): \(moved)")
+
+        let corner = CGPoint(x: moved.maxX - 30, y: moved.maxY - 30)
+        await drag(from: corner, by: CGSize(width: 60, height: 30), right: true)
+        let resized = element.frame ?? .zero
+        let resizeOK = abs(resized.width - moved.width - 60) <= 2 && abs(resized.height - moved.height - 30) <= 2 && abs(resized.minX - moved.minX) <= 2
+        log.append((resizeOK ? "PASS" : "FAIL") + " ⌃⌥ right-drag resizes from the bottom-right corner: \(resized)")
+
+        element.setFrame(original)
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: originalPoint, mouseButton: .left)?.post(tap: .cghidEventTap)
+        log.append("Restored: \(element.frame ?? .zero)")
+    }
+}
 #endif

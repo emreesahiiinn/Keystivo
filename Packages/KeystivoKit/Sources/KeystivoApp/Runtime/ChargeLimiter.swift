@@ -13,6 +13,9 @@ nonisolated struct ChargeLimitSettings: Codable, Hashable, Sendable {
     var sailingRange = 5
     /// While plugged in above the limit, run on battery until the limit is reached.
     var dischargesAboveLimit = false
+    /// Pause charging while the Mac sleeps: the limit can't be watched during sleep,
+    /// so charging would otherwise continue to 100%.
+    var pausesChargingDuringSleep = true
 }
 
 /// Battery charge limiting through Keystivo's privileged helper ("AlDente").
@@ -41,6 +44,7 @@ final class ChargeLimiter {
 
     @ObservationIgnored private var connection: NSXPCConnection?
     @ObservationIgnored private var wakeObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var sleepObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var appliedHardwareLimit: Int?
     @ObservationIgnored private let service = SMAppService.daemon(plistName: KeystivoHelper.launchdPlistName)
 
@@ -51,7 +55,21 @@ final class ChargeLimiter {
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.evaluate() }
         }
+        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.prepareForSleep() }
+        }
         evaluate()
+    }
+
+    /// Stops charging before sleep (synchronously, so it lands before the Mac sleeps);
+    /// `evaluate()` on wake resumes it if the battery is still below the limit.
+    private func prepareForSleep() {
+        guard hasBattery, helperState == .installed, settings.isEnabled, settings.pausesChargingDuringSleep, !isToppingUp,
+              scheme != .bclm, isChargingEnabled, let connection else { return }
+        let proxy = connection.synchronousRemoteObjectProxyWithErrorHandler { _ in } as? any KeystivoHelperProtocol
+        proxy?.setAdapterEnabled(true) { _ in }
+        proxy?.setChargingEnabled(false) { _, _ in }
+        isChargingEnabled = false
     }
 
     func refreshHelperState() {

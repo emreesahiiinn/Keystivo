@@ -41,7 +41,8 @@ public final class KeystivoAppDelegate: NSObject, NSApplicationDelegate {
         if !flows.isEmpty {
             KeystivoRuntime.shared.importWorkflows(from: flows)
         }
-        let links = urls.filter { $0.pathExtension != "keystivoflow" }
+        for url in urls where url.scheme?.lowercased() == "keystivo" { KeystivoRuntime.shared.automationSources.handle(url) }
+        let links = urls.filter { $0.pathExtension != "keystivoflow" && $0.scheme?.lowercased() != "keystivo" }
         if !links.isEmpty { KeystivoRuntime.shared.linkRouting.open(urls: links) }
     }
 

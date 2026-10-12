@@ -38,6 +38,12 @@ final class SwitcherModel {
     /// True when the pointer (not the keyboard) chose the selection; the grid
     /// then doesn't scroll, so the card stays under the pointer.
     var selectedByPointer = false
+    /// Type-to-filter ("S" or "/" while switching); the switcher then stays open
+    /// after the modifier is released.
+    var isSearching = false
+    var query = "" {
+        didSet { if query != oldValue { applyFilter() } }
+    }
     @ObservationIgnored var allEntries: [WindowInfo] = []
     /// Card frames in the panel's top-left coordinate space, for hover selection.
     @ObservationIgnored var cardFrames: [Int: CGRect] = [:]
@@ -50,11 +56,17 @@ final class SwitcherModel {
     }
 
     func applyFilter() {
+        var list = allEntries
         if let group = groupFilter {
-            entries = allEntries.filter { $0.bundleID.map(group.bundleIDs.contains) == true }
-        } else {
-            entries = allEntries
+            list = list.filter { $0.bundleID.map(group.bundleIDs.contains) == true }
         }
+        let text = query.trimmingCharacters(in: .whitespaces)
+        if !text.isEmpty {
+            // Keep most-recently-used order among the matches.
+            list = list.filter { FuzzyMatcher.bestMatch(text, title: $0.displayTitle, alternates: [$0.appName]) != nil }
+            selectedIndex = 0
+        }
+        entries = list
         selectedIndex = min(selectedIndex, max(entries.count - 1, 0))
     }
 
@@ -151,6 +163,8 @@ final class SwitcherController: EventTapHandler {
         options.includeMinimized = settings.includesMinimized
         options.includeHiddenApps = settings.includesHiddenApps
         options.includeOtherSpaces = settings.includesOtherSpaces
+        options.includeWindowlessApps = settings.includesWindowlessApps && scope == .all
+        WindowCatalog.shared.excludedBundleIDs = Set(settings.excludedApps)
         var windows = await WindowCatalog.shared.windows(options: options)
         if scope == .frontmostApp, let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier {
             windows = windows.filter { $0.pid == pid }
@@ -172,16 +186,19 @@ final class SwitcherController: EventTapHandler {
             return
         }
         model.groupFilter = nil
+        model.isSearching = false
+        model.query = ""
         model.thumbnailWidth = settings.thumbnailWidth
         model.showsThumbnails = settings.showsThumbnails && ThumbnailService.shared.isAvailable
         model.setEntries(windows)
-        model.selectedIndex = windows.count > 1 ? 1 : 0
+        // ⌘⇧⇥ starts from the far end, like the system switcher.
+        model.selectedIndex = holdModifiers.contains(.shift) ? windows.count - 1 : (windows.count > 1 ? 1 : 0)
         if pendingMoves != 0 { model.move(pendingMoves) }
         pendingMoves = 0
         present()
         EventTapManager.shared.refresh()
         if model.showsThumbnails {
-            Task { await ThumbnailService.shared.load(windows.prefix(30).map(\.id), width: settings.thumbnailWidth) }
+            Task { await ThumbnailService.shared.load(windows.filter { !$0.isWindowless }.prefix(30).map(\.id), width: settings.thumbnailWidth) }
         }
         // If the modifier was already released before we finished loading, commit now.
         if !self.holdModifiers.isEmpty, !KeyModifiers(CGEventSource.flagsState(.combinedSessionState)).isSuperset(of: self.holdModifiers) {
@@ -270,8 +287,9 @@ final class SwitcherController: EventTapHandler {
                     break
                 }
             }
-            // Optional ⌘⇥ takeover.
-            if keyCode == kVK_Tab, modifiers.subtracting(.shift) == .command {
+            // Optional ⌘⇥ takeover (left to the system for apps that need it, e.g. games or VMs).
+            if keyCode == kVK_Tab, modifiers.subtracting(.shift) == .command,
+               !runtime.config.switcher.systemSwitcherApps.contains(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "") {
                 Task { await toggle(scope: .all, holdModifiers: modifiers) }
                 return .consume
             }
@@ -287,6 +305,11 @@ final class SwitcherController: EventTapHandler {
         }
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
         let shift = modifiers.contains(.shift)
+        if model.isSearching, handleSearchKey(keyCode, event: event, shift: shift) {
+            if model.entries.isEmpty, model.query.isEmpty { close() }
+            resizePanel()
+            return .consume
+        }
         switch keyCode {
         case kVK_Tab: model.move(shift ? -1 : 1)
         case kVK_RightArrow: model.move(1)
@@ -296,8 +319,12 @@ final class SwitcherController: EventTapHandler {
         case kVK_ANSI_Grave: model.nextWindowOfSameApp()
         case kVK_Return, kVK_Space, kVK_ANSI_KeypadEnter: confirm()
         case kVK_Escape: close()
+        case kVK_ANSI_S, kVK_ANSI_Slash:
+            // Type to filter; the switcher stays open without the modifier.
+            model.isSearching = true
+            holdModifiers = []
         case kVK_ANSI_W:
-            if let window = model.selected { window.element?.close(); model.remove(window); resizePanel() }
+            if let window = model.selected, let element = window.element { element.close(); model.remove(window); resizePanel() }
         case kVK_ANSI_M:
             if let window = model.selected { window.element?.setMinimized(true) }
         case kVK_ANSI_Q:
@@ -315,6 +342,31 @@ final class SwitcherController: EventTapHandler {
         }
         if model.entries.isEmpty { close() }
         return .consume
+    }
+
+    /// Keys while filtering: typing edits the query; Return, Escape and arrows work as usual.
+    private func handleSearchKey(_ keyCode: Int, event: CGEvent, shift: Bool) -> Bool {
+        switch keyCode {
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            confirm()
+        case kVK_Escape:
+            if model.query.isEmpty { close() } else { model.query = "" }
+        case kVK_Delete:
+            if !model.query.isEmpty { model.query.removeLast() }
+        case kVK_Tab: model.move(shift ? -1 : 1)
+        case kVK_RightArrow: model.move(1)
+        case kVK_LeftArrow: model.move(-1)
+        case kVK_DownArrow: model.moveRow(1)
+        case kVK_UpArrow: model.moveRow(-1)
+        default:
+            var length = 0
+            var characters = [UniChar](repeating: 0, count: 4)
+            event.keyboardGetUnicodeString(maxStringLength: characters.count, actualStringLength: &length, unicodeString: &characters)
+            let text = String(utf16CodeUnits: characters, count: length)
+            guard !text.isEmpty, text.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else { return true }
+            model.query += text
+        }
+        return true
     }
 
     /// Hover selects, like the system switcher, once the pointer has moved.

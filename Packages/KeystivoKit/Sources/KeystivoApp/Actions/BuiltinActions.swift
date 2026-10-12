@@ -89,6 +89,34 @@ extension BuiltinActions {
                 try windows.moveFocused(to: target)
             }
         }
+        for edge in WindowManager.Edge.allCases {
+            let symbol = switch edge {
+            case .left: "arrow.left.to.line"
+            case .right: "arrow.right.to.line"
+            case .top: "arrow.up.to.line"
+            case .bottom: "arrow.down.to.line"
+            }
+            register("windows.edge.\(edge.rawValue)", symbol, .windows, keywords: ["move", "edge", "align", edge.rawValue]) { _, _ in
+                try requireAccessibility()
+                try WindowManager.shared.moveFocused(toEdge: edge)
+            }
+        }
+        register("windows.wider", "arrow.left.and.right", .windows, keywords: ["width", "larger", "grow", "resize"]) { _, _ in
+            try requireAccessibility()
+            try WindowManager.shared.resizeFocused(axis: .horizontal, larger: true)
+        }
+        register("windows.narrower", "arrow.right.and.left", .windows, keywords: ["width", "smaller", "shrink", "resize"]) { _, _ in
+            try requireAccessibility()
+            try WindowManager.shared.resizeFocused(axis: .horizontal, larger: false)
+        }
+        register("windows.taller", "arrow.up.and.down", .windows, keywords: ["height", "larger", "grow", "resize"]) { _, _ in
+            try requireAccessibility()
+            try WindowManager.shared.resizeFocused(axis: .vertical, larger: true)
+        }
+        register("windows.shorter", "arrow.down.and.up", .windows, keywords: ["height", "smaller", "shrink", "resize"]) { _, _ in
+            try requireAccessibility()
+            try WindowManager.shared.resizeFocused(axis: .vertical, larger: false)
+        }
         register("windows.restore", "arrow.uturn.backward.square", .windows, keywords: ["restore", "original"]) { _, _ in
             try requireAccessibility()
             try windows.restoreFocused()

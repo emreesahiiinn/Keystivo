@@ -140,7 +140,23 @@ public final class DragSnapEngine: EventTapHandler {
         guard let window, let startFrame, !isDraggingWindow, let frame = window.frame else { return }
         guard frame.size == startFrame.size, frame.origin != startFrame.origin else { return }
         isDraggingWindow = true
+        restorePresnapSize(window, frame: frame, pointer: point)
         updatePreview(at: point, modifiers: modifiers)
+    }
+
+    /// Dragging a snapped window away gives it back its earlier size, keeping
+    /// the grab point under the pointer (Rectangle / macOS tiling behavior).
+    private func restorePresnapSize(_ window: AXElement, frame: CGRect, pointer: CGPoint) {
+        let manager = WindowManager.shared
+        guard manager.restoresSizeOnDrag, let id = window.windowID, let original = manager.presnapFrame(of: id),
+              original.size != frame.size else { return }
+        manager.forgetSnap(of: id)
+        let grab = ScreenGeometry.toAX(point: pointer)
+        let ratio = frame.width > 0 ? (grab.x - frame.minX) / frame.width : 0.5
+        let restored = CGRect(x: grab.x - original.width * ratio, y: frame.minY, width: original.width, height: original.height).integral
+        _ = window.setSize(restored.size)
+        _ = window.setPosition(restored.origin)
+        startFrame = restored
     }
 
     private func updatePreview(at point: CGPoint, modifiers: KeyModifiers) {

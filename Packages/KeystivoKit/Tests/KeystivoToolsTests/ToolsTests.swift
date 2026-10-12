@@ -40,3 +40,29 @@ struct CompactRateTests {
         }
     }
 }
+
+@Suite("Hardware sensors")
+struct HardwareSensorTests {
+    @Test func decodesSMCTypes() {
+        let flt = HardwareSensors.decode([0x00, 0x00, 0xC8, 0x42], type: 0x666C7420) // "flt " 100.0
+        #expect(flt == 100)
+        #expect(HardwareSensors.decode([0x1F, 0x40], type: 0x66706532) == 2000) // "fpe2"
+        #expect(HardwareSensors.decode([0x2D, 0x80], type: 0x73703738) == 45.5) // "sp78"
+        #expect(HardwareSensors.decode([7], type: 0x75693820) == 7) // "ui8 "
+    }
+
+    @Test func cpuTemperaturePicksTheHottestCPUSensor() {
+        let sensors = [SensorReading(name: "PMU tdie1", value: 48), SensorReading(name: "PMU tdie3", value: 55),
+                       SensorReading(name: "NAND CH0 temp", value: 60), SensorReading(name: "gas gauge battery", value: 31)]
+        #expect(HardwareSensors.cpuTemperature(from: sensors) == 55)
+    }
+
+    @Test func readsThisMacWithoutCrashing() {
+        let sensors = HardwareSensors.shared.temperatures()
+        let gpu = HardwareSensors.shared.gpuUsage()
+        let fans = HardwareSensors.shared.fans()
+        let power = HardwareSensors.shared.systemPower()
+        print("SENSORS", sensors.count, sensors.prefix(6).map { "\($0.name)=\(Int($0.value))" }, "CPU", HardwareSensors.cpuTemperature(from: sensors) ?? -1,
+              "GPU", gpu ?? -1, "FANS", fans.map { Int($0.rpm) }, "POWER", power ?? -1)
+    }
+}

@@ -23,7 +23,10 @@ extension LauncherModel {
         case .root:
             if text.isEmpty { return emptyStateItems() }
             var results: [LauncherItem] = []
+            results += aliasItems(text)
             results += calculatorItems(text)
+            results += worldItems(text)
+            results += quicklinkItems(text)
             results += appItems(text)
             results += commandItems(text)
             results += workflowItems(text)
@@ -37,6 +40,16 @@ extension LauncherModel {
             return snippetItems(text, section: .results)
         case .textActions:
             return textActionItems(text)
+        case .emoji:
+            return emojiItems(text)
+        case .menuItems:
+            return menuItemItems(text)
+        case .processes:
+            return processItems(text)
+        case .schedule:
+            return scheduleItems(text)
+        case .captures:
+            return captureItems(text)
         case .pluginOutput:
             guard !text.isEmpty else { return pluginResultItems }
             return pluginResultItems.compactMap { item in
@@ -57,7 +70,7 @@ extension LauncherModel {
             let files = await FileSearch.shared.search(text, limit: 6)
             return files.map { fileItem($0, section: .files, score: 40) }
         case .files:
-            let files = await FileSearch.shared.search(text.isEmpty ? "" : text, limit: 40)
+            let files = await FileSearch.shared.search(text, limit: 40, recentsWhenEmpty: true)
             return files.enumerated().map { index, file in fileItem(file, section: .results, score: Double(1000 - index)) }
         case .clipboard:
             #if DEBUG
@@ -181,25 +194,36 @@ extension LauncherModel {
             guard descriptor.showsInLauncher, descriptor.isRunnableWithoutInput || descriptor.parameters.allSatisfy({ $0.isOptional || $0.defaultValue != nil || $0.key == "query" }) else { return nil }
             let title = L(descriptor.titleKey)
             let alternates = descriptor.keywords + [L(descriptor.category.titleKey)]
-            guard let match = FuzzyMatcher.bestMatch(text, title: title, alternates: alternates) else { return nil }
             let boost = runtime.config.usage["action:\(descriptor.id)"]?.boost() ?? 0
-            return commandItem(descriptor, score: match.score * 0.95 + boost, highlight: match.matchedOffsets)
+            if let match = FuzzyMatcher.bestMatch(text, title: title, alternates: alternates) {
+                return commandItem(descriptor, score: match.score * 0.95 + boost, highlight: match.matchedOffsets)
+            }
+            // "translate hello": the command's name, then its argument.
+            guard descriptor.parameters.contains(where: { $0.key == "query" }) else { return nil }
+            let words = text.split(separator: " ", omittingEmptySubsequences: true)
+            for count in stride(from: words.count - 1, through: 1, by: -1) {
+                let name = words[..<count].joined(separator: " ")
+                guard let match = FuzzyMatcher.bestMatch(name, title: title, alternates: alternates) else { continue }
+                let argument = words[count...].joined(separator: " ")
+                return commandItem(descriptor, score: match.score * 0.95 + boost, highlight: match.matchedOffsets, argument: argument)
+            }
+            return nil
         }
     }
 
-    func commandItem(_ descriptor: ActionDescriptor, score: Double, highlight: [Int]) -> LauncherItem {
+    func commandItem(_ descriptor: ActionDescriptor, score: Double, highlight: [Int], argument: String? = nil) -> LauncherItem {
         let combo = runtime.config.hotkeys.first { $0.isEnabled && $0.actions.count == 1 && $0.actions[0].actionID == descriptor.id }?.combo
         let acceptsQuery = descriptor.parameters.contains { $0.key == "query" }
-        let query = self.query
         return LauncherItem(
-            id: "action:\(descriptor.id)", title: L(descriptor.titleKey), subtitle: L(descriptor.category.titleKey),
+            id: "action:\(descriptor.id)", title: L(descriptor.titleKey),
+            subtitle: argument.map { "→ “\($0)”" } ?? L(descriptor.category.titleKey),
             icon: .symbol(descriptor.symbolName, color(for: descriptor.category)),
             accessory: combo.map { .shortcut($0) } ?? .text(L("launcher.accessory.command")),
             section: .commands, score: score, highlight: highlight,
             primary: LauncherAction(title: L("launcher.action.run"), symbol: "play", dismisses: !Self.keepsOpen(descriptor.id)) {
                 var invocation = descriptor.defaultInvocation()
-                if acceptsQuery, let space = query.firstIndex(of: " ") {
-                    invocation.arguments["query"] = .string(String(query[query.index(after: space)...]))
+                if acceptsQuery, let argument, !argument.isEmpty {
+                    invocation.arguments["query"] = .string(argument)
                 }
                 // Give the launcher time to close so actions target the previous app.
                 try? await Task.sleep(for: .milliseconds(Self.keepsOpen(descriptor.id) ? 0 : 90))
@@ -216,7 +240,8 @@ extension LauncherModel {
 
     /// Commands that switch the launcher into another mode instead of closing it.
     static func keepsOpen(_ actionID: String) -> Bool {
-        ["clipboard.history", "snippets.show", "launcher.files", "launcher.windows", "launcher.quickActions"].contains(actionID)
+        ["clipboard.history", "snippets.show", "launcher.files", "launcher.windows", "launcher.quickActions",
+         "launcher.emoji", "launcher.menuItems", "launcher.processes", "launcher.schedule", "tools.captureHistory"].contains(actionID)
             || actionID.hasPrefix("plugin.")
     }
 
@@ -242,10 +267,15 @@ extension LauncherModel {
     private func workflowItems(_ text: String) -> [LauncherItem] {
         runtime.config.automation.workflows.compactMap { workflow in
             guard workflow.showsInLauncher, let match = FuzzyMatcher.bestMatch(text, title: workflow.name, alternates: [workflow.notes]) else { return nil }
-            return LauncherItem(
+            return workflowItem(workflow, score: match.score, highlight: match.matchedOffsets)
+        }
+    }
+
+    func workflowItem(_ workflow: Workflow, score: Double, highlight: [Int]) -> LauncherItem {
+            LauncherItem(
                 id: "workflow:\(workflow.id)", title: workflow.name, subtitle: L("launcher.accessory.workflow"),
                 icon: .symbol(workflow.symbolName, .yellow), accessory: .text(L("launcher.accessory.workflow")),
-                section: .workflows, score: match.score, highlight: match.matchedOffsets,
+                section: .workflows, score: score, highlight: highlight,
                 primary: LauncherAction(title: L("launcher.action.run"), symbol: "play") {
                     try? await Task.sleep(for: .milliseconds(90))
                     AutomationEngine.shared.run(workflow, trigger: "launcher")
@@ -257,7 +287,6 @@ extension LauncherModel {
                 ],
                 usageKey: "workflow:\(workflow.id)"
             )
-        }
     }
 
     // MARK: Windows
@@ -307,7 +336,8 @@ extension LauncherModel {
             var score = 0.0
             var highlight: [Int] = []
             if !text.isEmpty {
-                guard let match = FuzzyMatcher.bestMatch(text, title: snippet.name, alternates: [snippet.keyword, snippet.collection, snippet.content]) else { return nil }
+                let alternates = section == .snippets ? [snippet.keyword] : [snippet.keyword, snippet.collection, snippet.content]
+                guard let match = FuzzyMatcher.bestMatch(text, title: snippet.name, alternates: alternates) else { return nil }
                 score = match.score * (section == .snippets ? 0.7 : 1)
                 highlight = match.matchedOffsets
             }
@@ -345,6 +375,7 @@ extension LauncherModel {
                 primary: LauncherAction(title: L("launcher.action.open"), symbol: "safari") { NSWorkspace.shared.open(url) }
             ))
         }
+        if let define = dictionaryItem(text) { items.append(define) }
         items.append(LauncherItem(
             id: "fallback:files", title: L("launcher.fallback.files", text), icon: .symbol("doc.text.magnifyingglass", .gray),
             section: .fallback, score: 0.9,
@@ -399,7 +430,7 @@ extension LauncherModel {
     func clipboardItem(_ entry: ClipboardItem) -> LauncherItem {
         let monitor = ClipboardMonitor.shared
         let icon: LauncherItem.Icon = switch entry.kind {
-        case .image: entry.data.flatMap(NSImage.init(data:)).map(LauncherItem.Icon.image) ?? .symbol("photo", .purple)
+        case .image: ClipboardThumbnails.thumbnail(for: entry).map(LauncherItem.Icon.image) ?? .symbol("photo", .purple)
         case .file: entry.filePaths.first.map(LauncherItem.Icon.file) ?? .symbol("doc", .gray)
         case .color: .color(entry.text)
         default: .symbol(entry.kind.symbolName, entry.isPinned ? .orange : .gray)
@@ -529,5 +560,23 @@ enum Pasteboard {
     static func paste(_ text: String) async {
         try? await Task.sleep(for: .milliseconds(80))
         await SnippetExpander.insert(text, renderingPlaceholders: false)
+    }
+}
+
+
+/// Small list icons for clipboard images, decoded once (full images can be many megabytes).
+enum ClipboardThumbnails {
+    private static var cache: [Int64: NSImage] = [:]
+
+    static func thumbnail(for entry: ClipboardItem) -> NSImage? {
+        if let cached = cache[entry.id] { return cached }
+        guard let data = entry.data, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 96,
+                       kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        if cache.count > 400 { cache.removeAll() }
+        cache[entry.id] = image
+        return image
     }
 }

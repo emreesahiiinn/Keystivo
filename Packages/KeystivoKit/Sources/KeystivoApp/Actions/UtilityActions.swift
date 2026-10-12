@@ -27,6 +27,21 @@ extension BuiltinActions {
             try await Task.sleep(for: .milliseconds(120))
             await runtime.screenTools.captureImage(pin: false)
         }
+        register("tools.captureWindow", "macwindow", .system, keywords: ["screenshot", "window", "capture", "shadow"]) { _, _ in
+            try await Task.sleep(for: .milliseconds(120))
+            await runtime.screenTools.captureImage(pin: false, mode: .window)
+        }
+        register("tools.captureScreen", "display", .system, keywords: ["screenshot", "full screen", "capture", "display"]) { _, _ in
+            try await Task.sleep(for: .milliseconds(120))
+            await runtime.screenTools.captureImage(pin: false, mode: .screen)
+        }
+        register("tools.captureDelayed", "timer", .system, keywords: ["screenshot", "timer", "delay", "self-timer", "capture"]) { _, _ in
+            try await Task.sleep(for: .milliseconds(120))
+            await runtime.screenTools.captureImage(pin: false, mode: .screen, delay: 5)
+        }
+        register("tools.captureHistory", "photo.stack", .system, keywords: ["screenshot", "history", "recent", "captures"]) { _, _ in
+            runtime.launcher.show(mode: .captures)
+        }
         register("tools.annotate", "pencil.tip.crop.circle", .system, keywords: ["annotate", "markup", "arrow", "screenshot", "cleanshot", "blur", "redact"]) { _, _ in
             try await Task.sleep(for: .milliseconds(120))
             await runtime.screenTools.annotate()

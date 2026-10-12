@@ -72,7 +72,8 @@ public final class PluginManager {
     // MARK: Running
 
     public func run(_ command: PluginCommand, of plugin: LoadedPlugin, query: String = "") async throws -> PluginOutput {
-        guard isEnabled(plugin) else { throw PluginError.notTrusted }
+        // Re-read the files: an edit since approval revokes trust immediately, not at the next restart.
+        guard isEnabled(plugin), trusted[plugin.id] == LoadedPlugin.fingerprint(of: plugin.directory) else { throw PluginError.notTrusted }
         let script = plugin.directory.appendingPathComponent(command.script)
         guard FileManager.default.fileExists(atPath: script.path) else { throw PluginError.scriptMissing(command.script) }
         let environment = [
@@ -117,46 +118,68 @@ public final class PluginManager {
 }
 
 /// Runs a script with a timeout, capturing stdout (stderr is appended on failure).
+/// Output is read as it arrives, and a script that outlives its timeout is
+/// stopped (SIGTERM, then SIGKILL) without waiting for children that keep its pipes open.
 public enum ScriptRunner {
     public static func run(script: URL, arguments: [String], environment: [String: String], workingDirectory: URL, timeout: Double) async throws -> String {
-        try await Task.detached {
-            let process = Process()
-            process.executableURL = script
-            process.arguments = arguments
-            process.currentDirectoryURL = workingDirectory
-            var env = ProcessInfo.processInfo.environment
-            env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            for (key, value) in environment { env[key] = value }
-            process.environment = env
-            let stdout = Pipe()
-            let stderr = Pipe()
-            process.standardOutput = stdout
-            process.standardError = stderr
-            do {
-                try process.run()
-            } catch {
-                throw PluginError.failed(-1, error.localizedDescription)
-            }
-            let deadline = Date.now.addingTimeInterval(timeout)
-            // Drain output concurrently so a chatty script can't block on a full pipe.
-            async let outData = Task.detached { stdout.fileHandleForReading.readDataToEndOfFile() }.value
-            async let errData = Task.detached { stderr.fileHandleForReading.readDataToEndOfFile() }.value
-            while process.isRunning {
-                if Date.now > deadline {
-                    process.terminate()
-                    throw PluginError.timedOut
-                }
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            let output = String(data: await outData, encoding: .utf8) ?? ""
-            let errors = String(data: await errData, encoding: .utf8) ?? ""
-            guard process.terminationStatus == 0 else {
-                throw PluginError.failed(process.terminationStatus, String((errors.isEmpty ? output : errors).prefix(500)))
-            }
-            return output
-        }.value
+        let process = Process()
+        process.executableURL = script
+        process.arguments = arguments
+        process.currentDirectoryURL = workingDirectory
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        for (key, value) in environment { env[key] = value }
+        process.environment = env
+        let stdout = Pipe(), stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        let out = Buffer(), err = Buffer()
+        stdout.fileHandleForReading.readabilityHandler = { handle in out.append(handle.availableData) }
+        stderr.fileHandleForReading.readabilityHandler = { handle in err.append(handle.availableData) }
+        let exited = AsyncStream<Void> { continuation in
+            process.terminationHandler = { _ in continuation.yield(); continuation.finish() }
+        }
+        do {
+            try process.run()
+        } catch {
+            throw PluginError.failed(-1, error.localizedDescription)
+        }
+        let timedOut = Buffer()
+        let watchdog = Task.detached {
+            try await Task.sleep(for: .seconds(timeout))
+            timedOut.append(Data([1]))
+            process.terminate()
+            let pid = process.processIdentifier
+            try await Task.sleep(for: .seconds(1))
+            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+        }
+        await withTaskCancellationHandler {
+            for await _ in exited {}
+        } onCancel: {
+            process.terminate()
+        }
+        watchdog.cancel()
+        // Let the last chunks arrive, but never wait on pipes held open by child processes.
+        try? await Task.sleep(for: .milliseconds(30))
+        stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
+        if !timedOut.data.isEmpty { throw PluginError.timedOut }
+        let output = String(data: out.data, encoding: .utf8) ?? ""
+        let errors = String(data: err.data, encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else {
+            throw PluginError.failed(process.terminationStatus, String((errors.isEmpty ? output : errors).prefix(500)))
+        }
+        return output
+    }
+
+    nonisolated private final class Buffer: @unchecked Sendable {
+        private var storage = Data()
+        private let lock = NSLock()
+        func append(_ data: Data) { lock.withLock { storage.append(data) } }
+        var data: Data { lock.withLock { storage } }
     }
 }
+
 
 extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }

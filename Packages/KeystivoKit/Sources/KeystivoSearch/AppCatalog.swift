@@ -48,6 +48,8 @@ public final class AppCatalog {
     public private(set) var apps: [AppRecord] = []
     public private(set) var lastScan: Date?
     @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored private var watchers: [any DispatchSourceFileSystemObject] = []
+    @ObservationIgnored private var pendingRescan: DispatchWorkItem?
 
     nonisolated public static let searchDirectories: [String] = [
         "/Applications", "/Applications/Utilities", "/System/Applications", "/System/Applications/Utilities",
@@ -63,6 +65,7 @@ public final class AppCatalog {
     }
 
     public func rescan() {
+        startWatching()
         guard scanTask == nil else { return }
         scanTask = Task {
             let records = await Task.detached(priority: .utility) { Self.scan() }.value
@@ -72,12 +75,47 @@ public final class AppCatalog {
         }
     }
 
+    /// Rescans shortly after apps are installed or removed (folder change events, no polling).
+    private func startWatching() {
+        guard watchers.isEmpty else { return }
+        for directory in ["/Applications", NSHomeDirectory() + "/Applications", "/Applications/Setapp"] {
+            let descriptor = open(directory, O_EVTONLY)
+            guard descriptor >= 0 else { continue }
+            let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: [.write, .rename, .delete], queue: .main)
+            source.setEventHandler { [weak self] in
+                MainActor.assumeIsolated { self?.scheduleRescan() }
+            }
+            source.setCancelHandler { close(descriptor) }
+            source.resume()
+            watchers.append(source)
+        }
+    }
+
+    private func scheduleRescan() {
+        pendingRescan?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.rescan() }
+        }
+        pendingRescan = work
+        // Installers write in bursts; wait until the copy settles.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
+    }
+
     nonisolated static func scan() -> [AppRecord] {
         var seen = Set<String>()
         var records: [AppRecord] = []
         let fileManager = FileManager.default
         var directories = searchDirectories
         directories.append("/System/Library/CoreServices")
+        // One level of plain folders too: Setapp, vendor suites (Adobe…), Chrome Apps.
+        for directory in ["/Applications", NSHomeDirectory() + "/Applications"] {
+            guard let contents = try? fileManager.contentsOfDirectory(atPath: directory) else { continue }
+            for entry in contents where !entry.hasSuffix(".app") && !entry.hasPrefix(".") && entry != "Utilities" {
+                let path = (directory as NSString).appendingPathComponent(entry)
+                var isDirectory: ObjCBool = false
+                if fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue { directories.append(path) }
+            }
+        }
         for directory in directories {
             guard let contents = try? fileManager.contentsOfDirectory(atPath: directory) else { continue }
             for entry in contents where entry.hasSuffix(".app") {

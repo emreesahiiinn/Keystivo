@@ -60,12 +60,22 @@ public final class ShelfStore {
 
     public var fileURLs: [URL] { items.compactMap(\.url) }
 
-    /// Moves every shelved file into `folder`.
+    /// Moves every shelved file into `folder` (renaming on name clashes). Files that
+    /// can't be moved stay on the shelf; the error lists them.
     public func moveAll(to folder: URL) throws {
+        var moved: Set<UUID> = []
+        var failures: [String] = []
         for item in items {
             guard let url = item.url else { continue }
-            try FileManager.default.moveItem(at: url, to: folder.appendingPathComponent(url.lastPathComponent))
+            let destination = FolderRuleEngine.unique(folder.appendingPathComponent(url.lastPathComponent))
+            do {
+                try FileManager.default.moveItem(at: url, to: destination)
+                moved.insert(item.id)
+            } catch {
+                failures.append(url.lastPathComponent)
+            }
         }
-        items.removeAll { $0.url != nil }
+        items.removeAll { moved.contains($0.id) }
+        if !failures.isEmpty { throw ActionError.failed(L("shelf.error.move", failures.joined(separator: ", "))) }
     }
 }

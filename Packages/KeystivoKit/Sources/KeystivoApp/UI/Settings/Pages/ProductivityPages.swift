@@ -14,6 +14,7 @@ import KeystivoSystem
 import KeystivoTools
 import KeystivoWindows
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Launcher
 
@@ -38,9 +39,13 @@ struct LauncherPage: View {
                 LabeledContent(L("action.launcher.files")) { ActionShortcutField(runtime: runtime, actionID: "launcher.files") }
                 LabeledContent(L("action.launcher.windows")) { ActionShortcutField(runtime: runtime, actionID: "launcher.windows") }
                 LabeledContent(L("action.launcher.quickActions")) { ActionShortcutField(runtime: runtime, actionID: "launcher.quickActions") }
+                LabeledContent(L("action.launcher.emoji")) { ActionShortcutField(runtime: runtime, actionID: "launcher.emoji") }
+                LabeledContent(L("action.launcher.menuItems")) { ActionShortcutField(runtime: runtime, actionID: "launcher.menuItems") }
+                LabeledContent(L("action.launcher.processes")) { ActionShortcutField(runtime: runtime, actionID: "launcher.processes") }
             }
             Section(L("launcherSettings.results")) {
                 Toggle(L("launcherSettings.calculator"), isOn: $runtime.config.launcher.showsCalculator)
+                Toggle(L("launcherSettings.currency"), isOn: $runtime.config.launcher.convertsCurrency)
                 Toggle(L("launcherSettings.windows"), isOn: $runtime.config.launcher.searchesWindows)
                 Toggle(L("launcherSettings.files"), isOn: $runtime.config.launcher.searchesFiles)
                 Toggle(L("launcherSettings.recent"), isOn: $runtime.config.launcher.showsRecent)
@@ -60,6 +65,13 @@ struct LauncherPage: View {
                     .font(.system(.callout, design: .monospaced))
             }
             Section {
+                QuicklinkList(links: $runtime.config.launcher.quicklinks)
+            } header: {
+                Text(L("quicklinks.title"))
+            } footer: {
+                Text(L("quicklinks.footer")).font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 LabeledContent(L("launcherSettings.indexedApps"), value: "\(AppCatalog.shared.apps.count)")
                 HStack {
                     Button(L("launcherSettings.rescan")) { AppCatalog.shared.rescan() }
@@ -70,6 +82,57 @@ struct LauncherPage: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Editable list of quicklinks: name, keyword and URL template per row.
+private struct QuicklinkList: View {
+    @Binding var links: [Quicklink]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(L("quicklinks.name")).frame(width: 150, alignment: .leading)
+                Text(L("quicklinks.keyword")).frame(width: 70, alignment: .leading)
+                Text(L("quicklinks.url"))
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            ForEach($links) { $link in
+                HStack(spacing: 8) {
+                    TextField("", text: $link.name).frame(width: 150)
+                    TextField("", text: $link.keyword).frame(width: 70)
+                    TextField("https://…{query}", text: $link.url)
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(link.resolvedURL(query: "test") == nil ? Color.red : Color.primary)
+                    Button(role: .destructive) {
+                        links.removeAll { $0.id == link.id }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                }
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden()
+            }
+            HStack {
+                Button {
+                    links.append(Quicklink(name: L("quicklinks.newName"), keyword: "", url: "https://"))
+                } label: {
+                    Label(L("quicklinks.add"), systemImage: "plus")
+                }
+                Spacer()
+                Button(L("quicklinks.restoreDefaults")) {
+                    let existing = Set(links.map { $0.url })
+                    links += Quicklink.defaults.filter { !existing.contains($0.url) }
+                }
+                .disabled(Quicklink.defaults.allSatisfy { link in links.contains { $0.url == link.url } })
+            }
+            .buttonStyle(.borderless)
+            .padding(.top, 4)
+        }
     }
 }
 
@@ -178,6 +241,8 @@ struct SnippetsPage: View {
                         selection = nil
                     } label: { Image(systemName: "minus") }
                     .disabled(selection == nil)
+                    Button { importSnippets() } label: { Image(systemName: "square.and.arrow.down") }
+                        .help(L("snippetsSettings.import"))
                     Spacer()
                     Toggle(L("snippetsSettings.expansion"), isOn: $runtime.config.snippets.expansionEnabled)
                         .toggleStyle(.switch)
@@ -213,6 +278,31 @@ struct SnippetsPage: View {
         Array(Set(filtered.map(\.collection))).sorted()
     }
 
+    /// Raycast (JSON), Espanso (YAML), TextExpander or any CSV export.
+    private func importSnippets() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.json, .yaml, .commaSeparatedText, .plainText]
+        panel.message = L("snippetsSettings.importHelp")
+        guard panel.runModal() == .OK else { return }
+        var added = 0, skipped = 0
+        var existing = Set(runtime.config.snippets.snippets.map { "\($0.keyword)\u{1F}\($0.content)" })
+        for url in panel.urls {
+            guard let data = try? Data(contentsOf: url), let imported = try? SnippetImporter.parse(data, fileName: url.lastPathComponent) else {
+                skipped += 1
+                continue
+            }
+            for snippet in imported where existing.insert("\(snippet.keyword)\u{1F}\(snippet.content)").inserted {
+                runtime.config.snippets.snippets.append(snippet)
+                added += 1
+            }
+        }
+        let alert = NSAlert()
+        alert.messageText = L("snippetsSettings.imported", added)
+        if skipped > 0 { alert.informativeText = L("snippetsSettings.importSkipped", skipped) }
+        alert.runModal()
+    }
+
     private var placeholderHelp: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(["{date}", "{time}", "{datetime}", "{date:yyyy-MM-dd}", "{clipboard}", "{uuid}", "{cursor}"], id: \.self) { token in
@@ -239,6 +329,11 @@ private struct SnippetEditor: View {
                     .font(.system(.body, design: .monospaced))
                 if !snippet.keyword.isEmpty, allKeywords.filter({ $0 == snippet.keyword }).count > 1 {
                     Label(L("snippetsSettings.duplicateKeyword"), systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption)
+                } else if !snippet.keyword.isEmpty, let longer = allKeywords.first(where: { $0 != snippet.keyword && $0.hasPrefix(snippet.keyword) }) {
+                    // This keyword fires before the longer one can be finished.
+                    Label(L("snippetsSettings.shadowsKeyword", longer), systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption)
+                } else if !snippet.keyword.isEmpty, let shorter = allKeywords.first(where: { $0 != snippet.keyword && snippet.keyword.hasPrefix($0) }) {
+                    Label(L("snippetsSettings.shadowedBy", shorter), systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption)
                 }
                 TextField(L("snippetsSettings.collection"), text: $snippet.collection)
                 Toggle(L("snippetsSettings.enabled"), isOn: $snippet.isEnabled)

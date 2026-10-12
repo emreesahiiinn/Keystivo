@@ -41,8 +41,18 @@ final class PresentationOverlay: EventTapHandler {
     private var clearTask: Task<Void, Never>?
     private var mouseMonitor: Any?
 
+    private var screenObserver: (any NSObjectProtocol)?
+
     init() {
         EventTapManager.shared.add(self)
+        // Displays added, removed or rearranged: rebuild one overlay per screen.
+        screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.windows.isEmpty else { return }
+                self.hideWindows()
+                self.showWindows()
+            }
+        }
     }
 
     func apply(_ settings: PresentationSettings) {

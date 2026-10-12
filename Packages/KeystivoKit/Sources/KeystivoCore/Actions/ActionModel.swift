@@ -198,12 +198,29 @@ nonisolated public struct ActionContext: Sendable {
     public var source: Source
     public var targetBundleID: String?
     public var variables: [String: String]
+    /// Where an action's text result goes (workflows pass it to later steps).
+    public var output: ActionOutputSink?
 
-    public init(source: Source, targetBundleID: String? = nil, variables: [String: String] = [:]) {
+    public init(source: Source, targetBundleID: String? = nil, variables: [String: String] = [:], output: ActionOutputSink? = nil) {
         self.source = source
         self.targetBundleID = targetBundleID
         self.variables = variables
+        self.output = output
     }
+
+    /// Reports the action's result (shell output, HTTP response, transformed text…).
+    public func emit(_ text: String) { output?.set(text) }
+}
+
+/// Collects an action's text result.
+nonisolated public final class ActionOutputSink: @unchecked Sendable {
+    private var value: String?
+    private let lock = NSLock()
+
+    public init() {}
+
+    public func set(_ text: String) { lock.withLock { value = text } }
+    public var text: String? { lock.withLock { value } }
 }
 
 nonisolated public enum ActionError: LocalizedError, Equatable {

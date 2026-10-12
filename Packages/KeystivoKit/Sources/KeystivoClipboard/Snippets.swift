@@ -112,6 +112,9 @@ public final class SnippetExpander: EventTapHandler {
     @ObservationIgnored private var keywords: [String: Snippet] = [:]
     @ObservationIgnored private var maxKeywordLength = 0
     @ObservationIgnored private var isExpanding = false
+    /// Keys typed while an expansion is being inserted; replayed afterwards so fast
+    /// typing never lands in the middle of the snippet.
+    @ObservationIgnored private var heldKeys: [CGEvent] = []
 
     public init() {}
 
@@ -133,7 +136,14 @@ public final class SnippetExpander: EventTapHandler {
 
     public func handleTapEvent(_ event: CGEvent, type: CGEventType) -> EventTapDisposition {
         if type == .leftMouseDown { buffer = ""; return .pass }
-        guard !isExpanding, !IsSecureEventInputEnabled() else { return .pass }
+        if isExpanding {
+            if type == .keyDown, event.getIntegerValueField(.eventSourceUserData) != Self.replayMarker, let copy = event.copy() {
+                heldKeys.append(copy)
+                return .consume
+            }
+            return .pass
+        }
+        guard !IsSecureEventInputEnabled() else { return .pass }
         if let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier, excludedBundleIDs.contains(bundleID) {
             return .pass
         }
@@ -161,7 +171,8 @@ public final class SnippetExpander: EventTapHandler {
         if buffer.count > max(maxKeywordLength, 1) * 2 { buffer = String(buffer.suffix(maxKeywordLength)) }
 
         // The keystroke completing a keyword passes through; we then erase the keyword.
-        if let match = keywords.first(where: { buffer.hasSuffix($0.key) }) {
+        // The longest matching keyword wins, so ";email" isn't shadowed by ";e" by chance.
+        if let match = keywords.filter({ buffer.hasSuffix($0.key) }).max(by: { $0.key.count < $1.key.count }) {
             buffer = ""
             let keywordLength = match.key.count
             let snippet = match.value
@@ -170,12 +181,36 @@ public final class SnippetExpander: EventTapHandler {
         return .pass
     }
 
+    static let replayMarker: Int64 = 0x4B53_4E50  // "KSNP"
+
     private func expand(_ snippet: Snippet, erasing count: Int) async {
         isExpanding = true
-        defer { isExpanding = false }
         try? await Task.sleep(for: .milliseconds(30))
         for _ in 0..<count { SyntheticInput.pressKey(UInt16(kVK_Delete)) }
         await Self.insert(snippet.content)
+        isExpanding = false
+        // Type what arrived meanwhile, in order.
+        let held = heldKeys
+        heldKeys = []
+        for event in held {
+            event.setIntegerValueField(.eventSourceUserData, value: Self.replayMarker)
+            event.post(tap: .cgSessionEventTap)
+            if let up = event.copy() {
+                up.type = .keyUp
+                up.post(tap: .cgSessionEventTap)
+            }
+        }
+    }
+
+    /// Keywords where one is the start of another (";e" and ";email"): the shorter
+    /// one fires first, so the longer can never be typed.
+    public static func shadowedKeywords(_ snippets: [Snippet]) -> [(short: String, long: String)] {
+        let keywords = Set(snippets.filter { $0.isEnabled && !$0.keyword.isEmpty }.map(\.keyword)).sorted()
+        var result: [(String, String)] = []
+        for short in keywords {
+            for long in keywords where long != short && long.hasPrefix(short) { result.append((short, long)) }
+        }
+        return result
     }
 
     /// Inserts rendered snippet text into the frontmost app through the pasteboard,
@@ -190,9 +225,14 @@ public final class SnippetExpander: EventTapHandler {
         let output = renderingPlaceholders
             ? SnippetRenderer.render(content, clipboard: pasteboard.string(forType: .string), locale: Localizer.shared.locale)
             : SnippetRenderer.Output(text: content, cursorOffsetFromEnd: 0)
+        // The text is provided on demand, so we know when the app has actually read it
+        // (slow apps such as Electron or VMs read well after the paste keystroke).
+        let provider = PasteProvider(text: output.text)
+        let item = NSPasteboardItem()
+        item.setDataProvider(provider, forTypes: [.string])
+        item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
         pasteboard.clearContents()
-        pasteboard.setString(output.text, forType: .string)
-        pasteboard.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+        pasteboard.writeObjects([item])
         ClipboardMonitor.shared.markOwnWrite()
         try? await Task.sleep(for: .milliseconds(40))
         SyntheticInput.paste()
@@ -200,9 +240,35 @@ public final class SnippetExpander: EventTapHandler {
             try? await Task.sleep(for: .milliseconds(60))
             for _ in 0..<output.cursorOffsetFromEnd { SyntheticInput.pressKey(UInt16(kVK_LeftArrow)) }
         }
-        try? await Task.sleep(for: .milliseconds(350))
+        await provider.waitUntilRead(timeout: .seconds(2))
+        try? await Task.sleep(for: .milliseconds(150))
         pasteboard.clearContents()
         if !saved.isEmpty { pasteboard.writeObjects(saved) }
         ClipboardMonitor.shared.markOwnWrite()
+        withExtendedLifetime(provider) {}
+    }
+}
+
+/// Supplies pasted text when the receiving app asks for it.
+nonisolated private final class PasteProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
+    let text: String
+    private var read = false
+    private let lock = NSLock()
+    var wasRead: Bool { lock.withLock { read } }
+
+    init(text: String) { self.text = text }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        item.setString(text, forType: type)
+        lock.withLock { read = true }
+    }
+
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {}
+
+    func waitUntilRead(timeout: Duration) async {
+        let deadline = ContinuousClock.now + timeout
+        while !wasRead, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
     }
 }

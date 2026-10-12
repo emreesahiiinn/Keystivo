@@ -214,8 +214,13 @@ final class HintsController: EventTapHandler {
             var length = 0
             var chars = [UniChar](repeating: 0, count: 4)
             event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
-            guard length > 0, let character = String(utf16CodeUnits: chars, count: length).lowercased().first,
-                  HintMatcher.isTypable(character) else { return .consume }
+            var typed = length > 0 ? String(utf16CodeUnits: chars, count: length) : ""
+            // Labels are typed with ⌥ (double-click), ⌃ (move pointer) or ⇧ held: read the
+            // key's plain character, since ⌥A would otherwise arrive as "å".
+            if matcher.mode == .labels, !modifiers.isEmpty, let plain = KeyboardLayout.character(for: UInt16(keyCode)) {
+                typed = plain
+            }
+            guard let character = typed.lowercased().first, HintMatcher.isTypable(character) else { return .consume }
             if character == "/" && matcher.mode == .labels {
                 matcher.setMode(.search)
                 update(matcher.evaluate())

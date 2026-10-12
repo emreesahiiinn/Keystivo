@@ -23,6 +23,11 @@ enum LauncherMode: Equatable {
     case files
     case windows
     case textActions
+    case emoji
+    case menuItems
+    case processes
+    case schedule
+    case captures
     case pluginOutput(title: String)
 
     var placeholderKey: String {
@@ -33,6 +38,11 @@ enum LauncherMode: Equatable {
         case .files: "launcher.placeholder.files"
         case .windows: "launcher.placeholder.windows"
         case .textActions: "launcher.placeholder.textActions"
+        case .emoji: "launcher.placeholder.emoji"
+        case .menuItems: "launcher.placeholder.menuItems"
+        case .processes: "launcher.placeholder.processes"
+        case .schedule: "launcher.placeholder.schedule"
+        case .captures: "launcher.placeholder.captures"
         case .pluginOutput: "launcher.placeholder.plugin"
         }
     }
@@ -45,6 +55,11 @@ enum LauncherMode: Equatable {
         case .files: "launcher.mode.files"
         case .windows: "launcher.mode.windows"
         case .textActions: "launcher.mode.textActions"
+        case .emoji: "launcher.mode.emoji"
+        case .menuItems: "launcher.mode.menuItems"
+        case .processes: "launcher.mode.processes"
+        case .schedule: "launcher.mode.schedule"
+        case .captures: "launcher.mode.captures"
         case .pluginOutput: nil
         }
     }
@@ -57,13 +72,18 @@ enum LauncherMode: Equatable {
         case .files: "doc.text.magnifyingglass"
         case .windows: "macwindow"
         case .textActions: "text.cursor"
+        case .emoji: "face.smiling"
+        case .menuItems: "filemenu.and.selection"
+        case .processes: "cpu"
+        case .schedule: "calendar"
+        case .captures: "photo.stack"
         case .pluginOutput: "puzzlepiece.extension"
         }
     }
 }
 
 enum LauncherSection: Int, CaseIterable, Comparable {
-    case calculator, recent, suggestions, apps, windows, commands, workflows, snippets, clipboard, files, results, fallback
+    case calculator, quicklinks, recent, suggestions, apps, windows, commands, workflows, snippets, clipboard, files, results, fallback
 
     static func < (lhs: LauncherSection, rhs: LauncherSection) -> Bool { lhs.rawValue < rhs.rawValue }
 
@@ -73,6 +93,7 @@ enum LauncherSection: Int, CaseIterable, Comparable {
     var limit: Int {
         switch self {
         case .calculator: 2
+        case .quicklinks: 3
         case .apps: 8
         case .commands: 10
         case .windows: 6
@@ -101,6 +122,8 @@ struct LauncherItem: Identifiable {
         case file(String)
         case image(NSImage)
         case color(String)
+        /// A character drawn as the icon (emoji, symbols).
+        case glyph(String)
     }
 
     enum Accessory {

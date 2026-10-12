@@ -167,7 +167,7 @@ private struct AppMixerRow: View {
                 }
                 Slider(value: Binding(get: { Double(setting.volume) }, set: { apps.setVolume(Float($0), for: entry.bundleID) }), in: 0...1.5)
                     .controlSize(.mini)
-                MeterBar(level: apps.hasActiveTap(entry.bundleID) ? apps.takePeak(for: entry.bundleID) : (entry.isPlaying ? 0.0 : 0))
+                LiveMeter(bundleID: entry.bundleID, isPlaying: entry.isPlaying)
             }
             Button { apps.toggleMute(for: entry.bundleID) } label: {
                 Image(systemName: setting.muted ? "speaker.slash.fill" : "speaker.wave.1")
@@ -175,6 +175,56 @@ private struct AppMixerRow: View {
             }
             .buttonStyle(.plain)
             .help(L("action.audio.setAppMuted"))
+            // Per-app output (SoundSource-style): e.g. music on speakers, calls on the headset.
+            Menu {
+                Button {
+                    apps.setOutputDevice(nil, for: entry.bundleID)
+                } label: {
+                    if setting.outputDeviceUID == nil { Label(L("mixer.systemOutput"), systemImage: "checkmark") } else { Text(L("mixer.systemOutput")) }
+                }
+                Divider()
+                ForEach(AudioDeviceManager.shared.outputDevices) { device in
+                    Button {
+                        apps.setOutputDevice(device.uid, for: entry.bundleID)
+                    } label: {
+                        if setting.outputDeviceUID == device.uid { Label(device.name, systemImage: "checkmark") } else { Text(device.name) }
+                    }
+                }
+            } label: {
+                Image(systemName: setting.outputDeviceUID == nil ? "hifispeaker" : "hifispeaker.fill")
+                    .foregroundStyle(setting.outputDeviceUID == nil ? Color.secondary : Color.accentColor)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(L("mixer.outputHelp"))
+        }
+    }
+}
+
+/// Live level for tapped apps; apps at 100% aren't tapped (nothing to measure),
+/// so they show a playing indicator instead.
+private struct LiveMeter: View {
+    let bundleID: String
+    let isPlaying: Bool
+
+    var body: some View {
+        let apps = AppAudioController.shared
+        if apps.hasActiveTap(bundleID) {
+            TimelineView(.animation(minimumInterval: 1.0 / 20)) { _ in
+                MeterBar(level: apps.meterLevel(for: bundleID))
+            }
+        } else {
+            HStack(spacing: 4) {
+                if isPlaying {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.green)
+                        .symbolEffect(.variableColor.iterative, isActive: true)
+                }
+                MeterBar(level: 0)
+            }
+            .frame(height: 7)
         }
     }
 }

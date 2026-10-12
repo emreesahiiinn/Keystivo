@@ -189,10 +189,31 @@ struct ScreenToolsPage: View {
         Form {
             PageHeader(symbol: "viewfinder", color: .orange, titleKey: "settings.page.screenTools", subtitleKey: "screenTools.subtitle")
             Section(L("screenTools.capture")) {
-                ForEach(["tools.captureText", "tools.captureImage", "tools.annotate", "tools.annotateClipboard", "tools.pinScreenshot", "tools.pickColor"], id: \.self) { id in
+                ForEach(["tools.captureText", "tools.captureImage", "tools.captureWindow", "tools.captureScreen", "tools.captureDelayed", "tools.captureHistory",
+                         "tools.annotate", "tools.annotateClipboard", "tools.pinScreenshot", "tools.pickColor"], id: \.self) { id in
                     LabeledContent(L("action.\(id)")) { ActionShortcutField(runtime: runtime, actionID: id) }
                 }
                 Toggle(L("screenTools.annotateAfterCapture"), isOn: $runtime.config.tools.annotatesAfterCapture)
+                Toggle(L("screenTools.quickAccess"), isOn: $runtime.config.tools.showsQuickAccess)
+                Toggle(L("screenTools.shadow"), isOn: $runtime.config.tools.screenshotShadow)
+                LabeledContent(L("screenTools.saveFolder")) {
+                    HStack {
+                        Text(runtime.config.tools.screenshotFolder.isEmpty ? L("screenTools.clipboardOnly") : runtime.config.tools.screenshotFolder)
+                            .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        Button(L("common.choose")) {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            panel.canCreateDirectories = true
+                            if panel.runModal() == .OK, let url = panel.url {
+                                runtime.config.tools.screenshotFolder = (url.path as NSString).abbreviatingWithTildeInPath
+                            }
+                        }
+                        if !runtime.config.tools.screenshotFolder.isEmpty {
+                            Button(L("common.remove")) { runtime.config.tools.screenshotFolder = "" }
+                        }
+                    }
+                }
                 Toggle(L("screenTools.showOCR"), isOn: $runtime.config.tools.ocrShowsResult)
                 Toggle(L("screenTools.pinAfterCapture"), isOn: $runtime.config.tools.pinsAfterCapture)
                 Picker(L("screenTools.colorFormat"), selection: $runtime.config.tools.colorFormat) {
@@ -208,6 +229,12 @@ struct ScreenToolsPage: View {
                 Toggle(L("record.microphone"), isOn: $runtime.config.tools.recordingCapturesMicrophone)
                 Toggle(L("record.countdown"), isOn: $runtime.config.tools.recordingCountdown)
                 Toggle(L("record.hevc"), isOn: $runtime.config.tools.recordingUsesHEVC)
+                Picker(L("record.format"), selection: $runtime.config.tools.recordingFormat) {
+                    ForEach(RecordingFormat.allCases, id: \.self) { Text(L($0.titleKey)).tag($0) }
+                }
+                Picker(L("record.frameRate"), selection: $runtime.config.tools.recordingFrameRate) {
+                    ForEach([24, 30, 60], id: \.self) { Text("\($0) fps").tag($0) }
+                }
                 Picker(L("record.after"), selection: $runtime.config.tools.recordingAfter) {
                     ForEach(RecordingFinishAction.allCases, id: \.self) { Text(L($0.titleKey)).tag($0) }
                 }
@@ -321,8 +348,62 @@ private struct BrightnessRow: View {
                 ), in: 0...1)
                 Image(systemName: "sun.max")
             }
+            if target.method == .ddc {
+                MonitorControlsView(display: target.id)
+            }
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// Contrast, speaker volume and input source of a DDC monitor (MonitorControl / BetterDisplay-style).
+private struct MonitorControlsView: View {
+    let display: CGDirectDisplayID
+    @State private var pendingInput: DDC.Input?
+
+    var body: some View {
+        let controller = BrightnessController.shared
+        let controls = controller.monitorControls[display]
+        VStack(alignment: .leading, spacing: 6) {
+            if let contrast = controls?.contrast {
+                HStack {
+                    Image(systemName: "circle.lefthalf.filled").frame(width: 16)
+                    Slider(value: Binding(get: { contrast }, set: { controller.setMonitorValue($0, feature: .contrast, for: display) }), in: 0...1)
+                    Text("\(Int((contrast * 100).rounded()))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 36, alignment: .trailing)
+                }
+                .help(L("displays.contrast"))
+            }
+            if let volume = controls?.volume {
+                HStack {
+                    Image(systemName: "speaker.wave.2").frame(width: 16)
+                    Slider(value: Binding(get: { volume }, set: { controller.setMonitorValue($0, feature: .volume, for: display) }), in: 0...1)
+                    Text("\(Int((volume * 100).rounded()))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 36, alignment: .trailing)
+                }
+                .help(L("displays.speakerVolume"))
+            }
+            HStack {
+                Image(systemName: "cable.connector").frame(width: 16)
+                Menu(DDC.Input(rawValue: controls?.input ?? 0)?.title ?? L("displays.input")) {
+                    ForEach(DDC.Input.allCases) { input in
+                        Button(input.title) { pendingInput = input }
+                    }
+                }
+                .fixedSize()
+                .help(L("displays.inputHelp"))
+                if controls == nil { ProgressView().controlSize(.small) }
+            }
+        }
+        .font(.caption)
+        .onAppear { controller.loadMonitorControls(display) }
+        .confirmationDialog(L("displays.switchInputTitle", pendingInput?.title ?? ""), isPresented: Binding(get: { pendingInput != nil }, set: { if !$0 { pendingInput = nil } })) {
+            Button(L("displays.switchInput")) {
+                if let input = pendingInput { controller.setInput(input.rawValue, for: display) }
+                pendingInput = nil
+            }
+            Button(L("common.cancel"), role: .cancel) { pendingInput = nil }
+        } message: {
+            Text(L("displays.switchInputMessage"))
+        }
     }
 }
 
@@ -389,8 +470,37 @@ struct BatteryPage: View {
             LabeledContent(L("battery.adapter")) {
                 Text(L(!power.isOnAC ? "battery.adapter.unplugged" : limiter.isAdapterEnabled ? "battery.adapter.inUse" : "battery.adapter.bypassed"))
             }
-            if let health = power.batteryHealth { LabeledContent(L("battery.health"), value: health) }
-            if let cycles = power.cycleCount { LabeledContent(L("battery.cycles"), value: "\(cycles)") }
+            if let details = power.batteryDetails, let health = details.health {
+                LabeledContent(L("battery.health")) {
+                    HStack(spacing: 6) {
+                        Text("\(health)%").monospacedDigit().foregroundStyle(health >= 80 ? Color.primary : Color.orange)
+                        if let max = details.maxCapacity, let design = details.designCapacity {
+                            Text(L("battery.capacityOf", max, design)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } else if let health = power.batteryHealth {
+                LabeledContent(L("battery.health"), value: health)
+            }
+            if let cycles = power.cycleCount {
+                let design = power.batteryDetails?.designCycleCount
+                LabeledContent(L("battery.cycles"), value: design.map { "\(cycles) / \($0)" } ?? "\(cycles)")
+            }
+            if let details = power.batteryDetails {
+                if let temperature = details.temperature {
+                    LabeledContent(L("battery.temperature"), value: Measurement(value: temperature, unit: UnitTemperature.celsius)
+                        .formatted(.measurement(width: .abbreviated, usage: .weather, numberFormatStyle: .number.precision(.fractionLength(1))).locale(Localizer.shared.locale)))
+                }
+                if let watts = details.power, abs(watts) >= 0.1 {
+                    LabeledContent(L(watts > 0 ? "battery.chargingPower" : "battery.drawPower"), value: String(format: "%.1f W", abs(watts)))
+                }
+                if let adapter = details.adapterWatts, power.isOnAC {
+                    LabeledContent(L("battery.adapterPower"), value: "\(adapter) W")
+                }
+                if let date = details.manufactureDate {
+                    LabeledContent(L("battery.manufactured"), value: date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: Localizer.shared.locale)))
+                }
+            }
         }
     }
 
@@ -451,6 +561,7 @@ struct BatteryPage: View {
                 LabeledContent(L("battery.sailing"), value: L("battery.sailingValue", runtime.config.system.chargeLimit.sailingRange))
             }
             Toggle(L("battery.discharge"), isOn: $runtime.config.system.chargeLimit.dischargesAboveLimit)
+            Toggle(L("battery.pauseDuringSleep"), isOn: $runtime.config.system.chargeLimit.pausesChargingDuringSleep)
             HStack {
                 Button(L("action.battery.topUp")) { limiter.topUp() }
                     .disabled(!runtime.config.system.chargeLimit.isEnabled || limiter.isToppingUp)

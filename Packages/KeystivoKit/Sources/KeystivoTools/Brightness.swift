@@ -17,6 +17,24 @@ nonisolated public enum DDC {
         case brightness = 0x10
         case contrast = 0x12
         case volume = 0x62
+        case inputSource = 0x60
+    }
+
+    /// Common MCCS input source codes (some monitors use vendor-specific ones).
+    public enum Input: UInt16, CaseIterable, Sendable, Identifiable {
+        case vga1 = 0x01, dvi1 = 0x03, displayPort1 = 0x0F, displayPort2 = 0x10, hdmi1 = 0x11, hdmi2 = 0x12, usbC = 0x1B
+        public var id: UInt16 { rawValue }
+        public var title: String {
+            switch self {
+            case .vga1: "VGA"
+            case .dvi1: "DVI"
+            case .displayPort1: "DisplayPort 1"
+            case .displayPort2: "DisplayPort 2"
+            case .hdmi1: "HDMI 1"
+            case .hdmi2: "HDMI 2"
+            case .usbC: "USB-C"
+            }
+        }
     }
 
     /// "Get VCP Feature" request.
@@ -315,6 +333,77 @@ public final class BrightnessController {
             let brightness = item.brightness ?? Self.brightness(fromGamma: DisplayManager.shared.dimming[item.id] ?? 1)
             return Target(id: item.id, name: item.name, method: item.method, brightness: brightness)
         }
+    }
+
+    // MARK: Contrast, volume, input (DDC monitors)
+
+    /// A DDC monitor's other controls, read on demand (each read takes ~100 ms).
+    public struct MonitorControls: Equatable, Sendable {
+        public var contrast: Double?
+        public var volume: Double?
+        public var input: UInt16?
+    }
+
+    public private(set) var monitorControls: [CGDirectDisplayID: MonitorControls] = [:]
+    @ObservationIgnored private var featureMaximums: [String: UInt16] = [:]
+
+    public func supportsMonitorControls(_ display: CGDirectDisplayID) -> Bool { channels[display] != nil }
+
+    /// Reads contrast, volume and input of a DDC monitor in the background.
+    public func loadMonitorControls(_ display: CGDirectDisplayID) {
+        guard let channel = channels[display]?.channel else { return }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let contrast = channel.read(.contrast)
+            let volume = channel.read(.volume)
+            let input = channel.read(.inputSource)
+            await MainActor.run {
+                guard let self else { return }
+                if let contrast { self.featureMaximums["\(display)-\(DDC.Feature.contrast.rawValue)"] = contrast.maximum }
+                if let volume { self.featureMaximums["\(display)-\(DDC.Feature.volume.rawValue)"] = volume.maximum }
+                self.monitorControls[display] = MonitorControls(
+                    contrast: contrast.map { Double($0.current) / Double(max($0.maximum, 1)) },
+                    volume: volume.map { Double($0.current) / Double(max($0.maximum, 1)) },
+                    input: input.map { $0.current & 0xFF }
+                )
+            }
+        }
+    }
+
+    /// Sets contrast or volume (0…1); writes are coalesced while dragging a slider.
+    public func setMonitorValue(_ value: Double, feature: DDC.Feature, for display: CGDirectDisplayID) {
+        guard let channel = channels[display]?.channel, feature == .contrast || feature == .volume else { return }
+        let fraction = min(1, max(0, value))
+        if feature == .contrast { monitorControls[display, default: MonitorControls()].contrast = fraction }
+        if feature == .volume { monitorControls[display, default: MonitorControls()].volume = fraction }
+        let key = "\(display)-\(feature.rawValue)"
+        let raw = UInt16((fraction * Double(featureMaximums[key] ?? 100)).rounded())
+        pendingFeatureWrites[key] = raw
+        guard !writingFeatures.contains(key) else { return }
+        writingFeatures.insert(key)
+        drainFeature(key, feature: feature, channel: channel)
+    }
+
+    @ObservationIgnored private var pendingFeatureWrites: [String: UInt16] = [:]
+    @ObservationIgnored private var writingFeatures: Set<String> = []
+
+    private func drainFeature(_ key: String, feature: DDC.Feature, channel: DDCChannel) {
+        guard let value = pendingFeatureWrites.removeValue(forKey: key) else {
+            writingFeatures.remove(key)
+            return
+        }
+        queue.async { [weak self] in
+            channel.write(feature, value: value)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.drainFeature(key, feature: feature, channel: channel) }
+            }
+        }
+    }
+
+    /// Switches the monitor to another input (the Mac's picture may disappear).
+    public func setInput(_ input: UInt16, for display: CGDirectDisplayID) {
+        guard let channel = channels[display]?.channel else { return }
+        monitorControls[display, default: MonitorControls()].input = input
+        queue.async { channel.write(.inputSource, value: input) }
     }
 
     // MARK: Setting brightness

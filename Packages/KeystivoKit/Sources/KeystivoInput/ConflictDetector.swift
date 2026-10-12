@@ -95,7 +95,8 @@ public enum SystemBindings {
                   let parameters = value["parameters"] as? [Int], parameters.count == 3,
                   parameters[1] != 65535 else { continue }
             let flags = NSEvent.ModifierFlags(rawValue: UInt(parameters[2]))
-            let combo = KeyCombo(keyCode: UInt16(parameters[1]), modifiers: KeyModifiers(flags))
+            // Arrow and function keys carry the fn flag here, but recorded shortcuts never do.
+            let combo = KeyCombo(keyCode: UInt16(parameters[1]), modifiers: KeyModifiers(flags).subtracting(.function))
             let name = symbolicNames[Int(key) ?? -1].map { L($0) } ?? L("conflict.systemShortcut", key)
             result.append(TriggerBinding(id: "system.hotkey.\(key)", trigger: .keyCombo(combo), title: name, origin: .system))
         }

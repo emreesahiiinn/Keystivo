@@ -235,6 +235,160 @@
         }
       }
     },
+    "NSCalendarsFullAccessUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo zeigt deine anstehenden Termine im Launcher und lässt dich an Videomeetings teilnehmen. Termine verlassen deinen Mac nie."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo shows your upcoming events in the launcher and lets you join video meetings. Events never leave your Mac."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo muestra tus próximos eventos en el lanzador y te permite unirte a videollamadas. Los eventos nunca salen de tu Mac."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo affiche vos prochains événements dans le lanceur et vous permet de rejoindre des réunions vidéo. Les événements ne quittent jamais votre Mac."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo mostra i tuoi prossimi eventi nel launcher e ti permette di partecipare alle videoriunioni. Gli eventi non lasciano mai il tuo Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo はランチャーに今後の予定を表示し、ビデオ会議に参加できるようにします。予定が Mac の外に送られることはありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo는 런처에 다가오는 일정을 표시하고 화상 회의에 참여할 수 있게 합니다. 일정은 Mac 밖으로 전송되지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Keystivo mostra seus próximos eventos no iniciador e permite entrar em reuniões por vídeo. Os eventos nunca saem do seu Mac."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo показывает предстоящие события в лаунчере и позволяет подключаться к видеовстречам. События никогда не покидают ваш Mac."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo yaklaşan etkinliklerinizi başlatıcıda gösterir ve görüntülü toplantılara katılmanızı sağlar. Etkinlikler Mac'inizden hiç çıkmaz."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 会在启动器中显示你即将到来的日程，并让你加入视频会议。日程绝不会离开你的 Mac。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 會在啟動器中顯示你即將到來的行程，並讓你加入視訊會議。行程絕不會離開你的 Mac。"
+          }
+        }
+      }
+    },
+    "NSCalendarsUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo zeigt deine anstehenden Termine im Launcher und lässt dich an Videomeetings teilnehmen. Termine verlassen deinen Mac nie."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo shows your upcoming events in the launcher and lets you join video meetings. Events never leave your Mac."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo muestra tus próximos eventos en el lanzador y te permite unirte a videollamadas. Los eventos nunca salen de tu Mac."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo affiche vos prochains événements dans le lanceur et vous permet de rejoindre des réunions vidéo. Les événements ne quittent jamais votre Mac."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo mostra i tuoi prossimi eventi nel launcher e ti permette di partecipare alle videoriunioni. Gli eventi non lasciano mai il tuo Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo はランチャーに今後の予定を表示し、ビデオ会議に参加できるようにします。予定が Mac の外に送られることはありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo는 런처에 다가오는 일정을 표시하고 화상 회의에 참여할 수 있게 합니다. 일정은 Mac 밖으로 전송되지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Keystivo mostra seus próximos eventos no iniciador e permite entrar em reuniões por vídeo. Os eventos nunca saem do seu Mac."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo показывает предстоящие события в лаунчере и позволяет подключаться к видеовстречам. События никогда не покидают ваш Mac."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo yaklaşan etkinliklerinizi başlatıcıda gösterir ve görüntülü toplantılara katılmanızı sağlar. Etkinlikler Mac'inizden hiç çıkmaz."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 会在启动器中显示你即将到来的日程，并让你加入视频会议。日程绝不会离开你的 Mac。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keystivo 會在啟動器中顯示你即將到來的行程，並讓你加入視訊會議。行程絕不會離開你的 Mac。"
+          }
+        }
+      }
+    },
     "NSMicrophoneUsageDescription": {
       "comment": "Microphone permission prompt (screen recording with microphone)",
       "extractionState": "manual",

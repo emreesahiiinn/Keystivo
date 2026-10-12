@@ -55,15 +55,15 @@ public enum SystemCommandRunner {
         case .screenSaver:
             open(path: "/System/Library/CoreServices/ScreenSaverEngine.app")
         case .restart:
-            try appleScript("tell application \"System Events\" to restart")
+            try await appleScript("tell application \"System Events\" to restart")
         case .shutDown:
-            try appleScript("tell application \"System Events\" to shut down")
+            try await appleScript("tell application \"System Events\" to shut down")
         case .logOut:
-            try appleScript("tell application \"System Events\" to log out")
+            try await appleScript("tell application \"System Events\" to log out")
         case .emptyTrash:
-            try appleScript("tell application \"Finder\" to empty trash")
+            try await appleScript("tell application \"Finder\" to empty trash")
         case .toggleDarkMode:
-            try appleScript("tell application \"System Events\" to tell appearance preferences to set dark mode to not dark mode")
+            try await appleScript("tell application \"System Events\" to tell appearance preferences to set dark mode to not dark mode")
         case .toggleHiddenFiles:
             toggleFinderPreference("AppleShowAllFiles", defaultValue: false)
             await relaunch(bundleID: "com.apple.finder")
@@ -153,41 +153,94 @@ public enum SystemCommandRunner {
         if !failures.isEmpty { throw ActionError.failed(L("system.error.eject", failures.joined(separator: ", "))) }
     }
 
-    public static func appleScript(_ source: String) throws {
-        var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else { throw ActionError.failed(L("system.error.script")) }
-        script.executeAndReturnError(&error)
-        if let error {
-            let code = error[NSAppleScript.errorNumber] as? Int ?? 0
-            if code == -1743 { throw ActionError.permissionRequired(.automation) }
-            throw ActionError.failed(error[NSAppleScript.errorMessage] as? String ?? L("system.error.script"))
+    /// Runs AppleScript in a separate `osascript` process, so a slow script never
+    /// blocks the app (or the event tap that shares its main thread).
+    @discardableResult
+    public static func appleScript(_ source: String, timeout: Duration = .seconds(60)) async throws -> String {
+        do {
+            return try await run("/usr/bin/osascript", ["-e", source], timeout: timeout)
+        } catch ActionError.failed(let message) where message.contains("-1743") || message.contains("Not authorized to send Apple events") {
+            throw ActionError.permissionRequired(.automation)
         }
     }
 
     @discardableResult
     public static func shell(_ executable: String, _ arguments: [String], timeout: Duration = .seconds(30)) async throws -> String {
-        try await Task.detached {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            let output = Pipe()
-            process.standardOutput = output
-            process.standardError = output
-            try process.run()
-            process.waitUntilExit()
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            let text = String(data: data, encoding: .utf8) ?? ""
-            guard process.terminationStatus == 0 else { throw ActionError.failed(text.isEmpty ? "exit \(process.terminationStatus)" : text) }
-            return text
-        }.value
+        try await run(executable, arguments, timeout: timeout)
     }
 
-    /// Runs a macOS Shortcut by name (e.g. one that toggles a Focus/Do Not Disturb).
-    public static func runShortcut(named name: String, input: String? = nil) async throws {
-        var arguments = ["run", name]
-        if input != nil { arguments += ["--input-path", "-"] }
-        try await shell("/usr/bin/shortcuts", arguments)
+    /// Runs a process with optional stdin; output is read while it runs (no pipe
+    /// deadlock on large output), it's stopped after `timeout`, and cancelling the
+    /// calling task (a stopped workflow) terminates it.
+    @discardableResult
+    public static func run(_ executable: String, _ arguments: [String], input: String? = nil, timeout: Duration = .seconds(30)) async throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        let stdin = input.map { _ in Pipe() }
+        if let stdin { process.standardInput = stdin }
+        let collected = OutputCollector()
+        output.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty { collected.append(data) }
+        }
+        let exited = AsyncStream<Void> { continuation in
+            process.terminationHandler = { _ in continuation.yield(); continuation.finish() }
+        }
+        try process.run()
+        if let stdin, let input {
+            stdin.fileHandleForWriting.write(Data(input.utf8))
+            try? stdin.fileHandleForWriting.close()
+        }
+        let watchdog = Task.detached {
+            try await Task.sleep(for: timeout)
+            Self.stop(process)
+        }
+        await withTaskCancellationHandler {
+            for await _ in exited {}
+        } onCancel: {
+            Self.stop(process)
+        }
+        watchdog.cancel()
+        output.fileHandleForReading.readabilityHandler = nil
+        collected.append(output.fileHandleForReading.readDataToEndOfFile())
+        let text = String(data: collected.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if Task.isCancelled { throw CancellationError() }
+        if process.terminationReason == .uncaughtSignal, process.terminationStatus == SIGTERM || process.terminationStatus == SIGKILL {
+            throw ActionError.failed(L("system.error.timeout"))
+        }
+        guard process.terminationStatus == 0 else { throw ActionError.failed(text.isEmpty ? "exit \(process.terminationStatus)" : text) }
+        return text
     }
+
+    /// SIGTERM, then SIGKILL if it's still running two seconds later.
+    nonisolated private static func stop(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let pid = process.processIdentifier
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+        }
+    }
+
+    /// Runs a macOS Shortcut by name, optionally with text input; returns its text output.
+    @discardableResult
+    public static func runShortcut(named name: String, input: String? = nil) async throws -> String {
+        var arguments = ["run", name, "--output-path", "-"]
+        if input != nil { arguments += ["--input-path", "-"] }
+        return try await run("/usr/bin/shortcuts", arguments, input: input, timeout: .seconds(120))
+    }
+}
+
+/// Thread-safe byte buffer for process output.
+nonisolated private final class OutputCollector: @unchecked Sendable {
+    private var buffer = Data()
+    private let lock = NSLock()
+    func append(_ data: Data) { lock.withLock { buffer.append(data) } }
+    var data: Data { lock.withLock { buffer } }
 }
 
 /// Local user notifications for workflows and timers.

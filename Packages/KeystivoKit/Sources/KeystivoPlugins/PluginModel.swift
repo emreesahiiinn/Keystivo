@@ -121,18 +121,32 @@ nonisolated public struct LoadedPlugin: Identifiable, Hashable, Sendable {
         guard !manifest.id.isEmpty, manifest.id.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil else {
             throw PluginError.invalidManifest(L("plugins.error.badID"))
         }
-        var hasher = SHA256()
-        hasher.update(data: data)
         for command in manifest.commands {
             let scriptURL = directory.appendingPathComponent(command.script).standardizedFileURL
             // Scripts must live inside the plugin directory.
             guard scriptURL.path.hasPrefix(directory.standardizedFileURL.path + "/") else {
                 throw PluginError.invalidManifest(L("plugins.error.scriptOutside", command.script))
             }
-            if let script = try? Data(contentsOf: scriptURL) { hasher.update(data: script) }
         }
-        let hash = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        let hash = fingerprint(of: directory)
         return LoadedPlugin(manifest: manifest, directory: directory, contentHash: hash)
+    }
+
+    /// Every file in the plugin folder (helpers and data included) with its
+    /// relative path, so any change revokes trust.
+    public static func fingerprint(of directory: URL) -> String {
+        var hasher = SHA256()
+        let root = directory.standardizedFileURL.path
+        let files = (FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])?
+            .compactMap { $0 as? URL }
+            .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true } ?? [])
+            .map { $0.standardizedFileURL }
+            .sorted { $0.path < $1.path }
+        for file in files {
+            hasher.update(data: Data(String(file.path.dropFirst(root.count)).utf8))
+            if let contents = try? Data(contentsOf: file, options: .mappedIfSafe) { hasher.update(data: contents) }
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public func title(of command: PluginCommand, language: String) -> String {

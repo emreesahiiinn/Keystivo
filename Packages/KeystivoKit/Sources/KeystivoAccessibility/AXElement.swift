@@ -104,6 +104,13 @@ nonisolated public struct AXElement: Hashable, @unchecked Sendable {
         return _AXUIElementGetWindow(raw, &id) == .success && id != 0 ? id : nil
     }
 
+    /// Raw lookup result, for diagnostics.
+    public var windowIDLookup: (error: Int32, id: CGWindowID) {
+        var id: CGWindowID = 0
+        let error = _AXUIElementGetWindow(raw, &id)
+        return (error.rawValue, id)
+    }
+
     /// Top-left-origin position in global screen coordinates.
     public var position: CGPoint? {
         guard let value: AXValue = attribute(kAXPositionAttribute) else { return nil }

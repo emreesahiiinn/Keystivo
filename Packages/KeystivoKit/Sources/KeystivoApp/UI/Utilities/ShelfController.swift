@@ -76,12 +76,19 @@ final class ShelfController {
         upMonitor = nil
     }
 
+    /// Appears when a file drag reaches the left or right edge of a screen (Yoink-style),
+    /// not on every drag (moving files inside Finder shouldn't pop it up).
     private func dragged() {
+        guard !isVisible else { return }
+        let location = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(location, $0.frame, false) }),
+              location.x <= screen.frame.minX + 6 || location.x >= screen.frame.maxX - 6 else { return }
         let pasteboard = NSPasteboard(name: .drag)
         guard pasteboard.changeCount != lastDragChangeCount else { return }
-        lastDragChangeCount = pasteboard.changeCount
         let types = pasteboard.types ?? []
-        if types.contains(.fileURL) { show() }
+        guard types.contains(.fileURL) else { return }
+        lastDragChangeCount = pasteboard.changeCount
+        show()
     }
 
     private func dragEnded() {

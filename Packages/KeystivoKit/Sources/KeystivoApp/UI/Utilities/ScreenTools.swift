@@ -51,22 +51,50 @@ final class ScreenToolsController {
         }
     }
 
-    /// Select an area → copy the image to the clipboard, optionally pin or annotate it.
-    func captureImage(pin: Bool) async {
-        guard let data = try? await ScreenCapture.capture(.area), let image = NSImage(data: data) else { return }
+    /// Area (Space switches to window picking), window or screen → copy the image
+    /// to the clipboard, save it when a folder is set, optionally pin or annotate it.
+    func captureImage(pin: Bool, mode: CaptureMode = .area, delay: Int = 0) async {
+        let tools = runtime.config.tools
+        guard let data = try? await ScreenCapture.capture(mode, delay: delay, shadow: tools.screenshotShadow),
+              let image = NSImage(data: data) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])
-        if !pin, runtime.config.tools.annotatesAfterCapture {
+        let saved = save(data)
+        let historyFile = CaptureHistory.shared.add(data)
+        if !pin, tools.annotatesAfterCapture {
             runtime.annotationEditor.open(image)
             return
         }
-        runtime.hud.show(symbol: "camera.viewfinder", text: L("capture.copiedImage"))
-        if pin || runtime.config.tools.pinsAfterCapture { self.pin(image) }
+        if pin || tools.pinsAfterCapture {
+            self.pin(image)
+        } else if tools.showsQuickAccess, let historyFile {
+            runtime.quickAccess.show(image, file: historyFile)
+            return
+        }
+        runtime.hud.show(symbol: "camera.viewfinder", text: saved.map { L("capture.savedImage", $0.lastPathComponent) } ?? L("capture.copiedImage"))
+    }
+
+    /// Writes the screenshot into the configured folder, if any.
+    private func save(_ data: Data) -> URL? {
+        let folderPath = runtime.config.tools.screenshotFolder.trimmingCharacters(in: .whitespaces)
+        guard !folderPath.isEmpty else { return nil }
+        let folder = URL(fileURLWithPath: (folderPath as NSString).expandingTildeInPath, isDirectory: true)
+        let stamp = Date.now.formatted(.verbatim("\(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)).\(minute: .twoDigits).\(second: .twoDigits)", timeZone: .current, calendar: .current))
+        let url = folder.appendingPathComponent(L("capture.fileName", stamp) + ".png")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            DiagnosticsCenter.shared.record(error, module: "ScreenTools", context: L("capture.saveFailed"))
+            return nil
+        }
     }
 
     /// Select an area → open it in the annotation editor (CleanShot-style).
     func annotate() async {
         guard let data = try? await ScreenCapture.capture(.area), let image = NSImage(data: data) else { return }
+        CaptureHistory.shared.add(data)
         runtime.annotationEditor.open(image)
     }
 

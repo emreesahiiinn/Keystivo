@@ -99,10 +99,15 @@ public enum AppUninstaller {
     public static func uninstall(_ items: [LeftoverItem]) async throws -> Int64 {
         if let app = items.first(where: { $0.category == .application }),
            let bundleID = Bundle(url: app.url)?.bundleIdentifier {
-            for running in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID) {
-                running.terminate()
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            running.forEach { $0.terminate() }
+            // Never trash an app that's still running (it may be asking to save documents).
+            for _ in 0..<50 where running.contains(where: { !$0.isTerminated }) {
+                try? await Task.sleep(for: .milliseconds(100))
             }
-            try? await Task.sleep(for: .milliseconds(800))
+            if let stillRunning = running.first(where: { !$0.isTerminated }) {
+                throw ActionError.failed(L("uninstaller.error.stillRunning", stillRunning.localizedName ?? bundleID))
+            }
         }
         var freed: Int64 = 0
         var failures: [String] = []

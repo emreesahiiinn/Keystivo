@@ -3,11 +3,20 @@ import CMultitouch
 import KeystivoCore
 import Observation
 
-/// Recognizer state confined to the multitouch callback thread.
+/// Recognizer state for the multitouch callbacks: one recognizer per device, so a
+/// trackpad and a Magic Mouse used together don't corrupt each other's gestures.
 nonisolated final class MultitouchState: @unchecked Sendable {
-    var recognizer = TrackpadRecognizer()
-    var allowTwoFinger = false
-    var points: [TouchPoint] = []
+    private var recognizers: [UInt: TrackpadRecognizer] = [:]
+    private let lock = NSLock()
+
+    func process(_ points: [TouchPoint], device: UInt, timestamp: Double, allowTwoFinger: Bool) -> [TrackpadRecognizer.Event] {
+        lock.withLock {
+            var recognizer = recognizers[device] ?? TrackpadRecognizer()
+            let events = recognizer.process(points, timestamp: timestamp, allowTwoFingerSwipes: allowTwoFinger)
+            recognizers[device] = recognizer
+            return events
+        }
+    }
 }
 
 /// The multitouch C callback has no context pointer, so the live state is global.
@@ -28,7 +37,6 @@ public final class TrackpadGestureEngine {
 
     @ObservationIgnored private var devices: [KSMTDeviceRef] = []
     @ObservationIgnored private var deviceList: CFMutableArray?
-    @ObservationIgnored private var flagsMonitor: Any?
 
     public init() {
         isAvailable = KSMTLoad()
@@ -36,6 +44,13 @@ public final class TrackpadGestureEngine {
 
     public func setRunning(_ running: Bool) {
         running ? start() : stop()
+    }
+
+    /// Picks up trackpads connected (or re-enumerated after sleep) since starting.
+    public func restartIfRunning() {
+        guard isRunning else { return }
+        stop()
+        start()
     }
 
     private func start() {
@@ -53,11 +68,6 @@ public final class TrackpadGestureEngine {
             KSMTStart(device)
             devices.append(device)
         }
-        // Holding a modifier enables two-finger swipes without breaking normal scrolling.
-        flagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { event in
-            let modifiers = KeyModifiers(event.modifierFlags)
-            multitouchState?.allowTwoFinger = !modifiers.intersection([.command, .option, .control]).isEmpty
-        }
         isRunning = !devices.isEmpty
     }
 
@@ -69,8 +79,6 @@ public final class TrackpadGestureEngine {
         }
         devices.removeAll()
         deviceList = nil
-        if let flagsMonitor { NSEvent.removeMonitor(flagsMonitor) }
-        flagsMonitor = nil
         multitouchState = nil
         isRunning = false
     }
@@ -95,17 +103,26 @@ public final class TrackpadGestureEngine {
 /// C-convention callback invoked ~100×/s on a private thread.
 nonisolated private func multitouchCallback(_ device: KSMTDeviceRef?, _ touches: UnsafePointer<KSMTTouch>?, _ count: Int32, _ timestamp: Double, _ frame: Int32) -> Int32 {
     guard let state = multitouchState else { return 0 }
-    state.points.removeAll(keepingCapacity: true)
+    var points: [TouchPoint] = []
     if let touches {
+        points.reserveCapacity(Int(count))
         for index in 0..<Int(count) {
             let touch = touches[index]
             // States 1…4 are touching; 5+ are lifting/hovering.
             if touch.state >= 1 && touch.state <= 4 {
-                state.points.append(TouchPoint(id: touch.pathIndex, x: touch.normalized.position.x, y: touch.normalized.position.y))
+                points.append(TouchPoint(id: touch.pathIndex, x: touch.normalized.position.x, y: touch.normalized.position.y))
             }
         }
     }
-    for event in state.recognizer.process(state.points, timestamp: timestamp, allowTwoFingerSwipes: state.allowTwoFinger) {
+    // Holding ⌘/⌥/⌃ enables two-finger swipes without breaking normal scrolling.
+    // Read here rather than from an NSEvent monitor, which misses Keystivo's own windows.
+    var allowTwoFinger = false
+    if points.count == 2 {
+        let modifiers = KeyModifiers(CGEventSource.flagsState(.combinedSessionState))
+        allowTwoFinger = !modifiers.intersection([.command, .option, .control]).isEmpty
+    }
+    let deviceKey = UInt(bitPattern: device)
+    for event in state.process(points, device: deviceKey, timestamp: timestamp, allowTwoFinger: allowTwoFinger) {
         TrackpadGestureEngine.deliver(event)
     }
     return 0
@@ -187,7 +204,11 @@ public final class MouseGestureEngine: EventTapHandler {
             }
             // No gesture: replay the original click at its original location.
             if let location = downLocation {
-                let replayButton: SyntheticInput.MouseButton = button == .right ? .right : .middle
+                let replayButton: SyntheticInput.MouseButton = switch button {
+                case .right: .right
+                case .middle: .middle
+                case .button4, .button5: .other(button.buttonNumber)
+                }
                 Task { SyntheticInput.click(at: location, button: replayButton) }
             }
             return .consume

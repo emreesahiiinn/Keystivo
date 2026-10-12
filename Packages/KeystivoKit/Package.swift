@@ -54,7 +54,7 @@ let package = Package(
         module("KeystivoAutomation", dependencies: ["KeystivoCore"]),
         module("KeystivoSystem", dependencies: ["KeystivoCore", "KeystivoAccessibility"]),
         module("KeystivoPlugins", dependencies: ["KeystivoCore"], resources: [.copy("Resources/Examples.keystivoplugin")]),
-        module("KeystivoTools", dependencies: ["KeystivoCore"]),
+        module("KeystivoTools", dependencies: ["KeystivoCore", "KeystivoHelperCore"]),
         module("KeystivoFiles", dependencies: ["KeystivoCore"]),
         module("KeystivoLinks", dependencies: ["KeystivoCore"]),
         // Self-contained: also compiled into the standalone .saver bundles.

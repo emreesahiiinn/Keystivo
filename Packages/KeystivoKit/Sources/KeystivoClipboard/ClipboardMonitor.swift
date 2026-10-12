@@ -44,6 +44,9 @@ public final class ClipboardMonitor {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var lastChangeCount = NSPasteboard.general.changeCount
     @ObservationIgnored private var ignoreChangeCount: Int?
+    @ObservationIgnored private var capturesSincePrune = 0
+    /// Called after something new was copied (not for Keystivo's own writes).
+    @ObservationIgnored public var onCapture: (@MainActor (ClipboardItem) -> Void)?
     @ObservationIgnored private var skipNext = false
 
     /// Pasteboard markers used by password managers and well-behaved apps
@@ -127,6 +130,13 @@ public final class ClipboardMonitor {
             do {
                 try await store?.add(item)
                 revision += 1
+                onCapture?(item)
+                // Keep the history within its limits during long uptimes, not only at launch.
+                capturesSincePrune += 1
+                if capturesSincePrune >= 25 {
+                    capturesSincePrune = 0
+                    await prune()
+                }
             } catch {
                 DiagnosticsCenter.shared.record(error, module: "Clipboard")
             }
@@ -139,10 +149,13 @@ public final class ClipboardMonitor {
             let names = urls.map(\.lastPathComponent).joined(separator: ", ")
             return ClipboardItem(kind: .file, text: names, filePaths: urls.map(\.path), sourceBundleID: source)
         }
-        if settings.capturesImages, let image = NSImage(pasteboard: pasteboard), pasteboard.string(forType: .string) == nil,
-           let png = image.downscaledPNG(maxDimension: 1600) {
-            let size = image.size
-            return ClipboardItem(kind: .image, text: "\(Int(size.width))×\(Int(size.height))", data: png, sourceBundleID: source)
+        if settings.capturesImages, pasteboard.string(forType: .string) == nil, let image = NSImage(pasteboard: pasteboard),
+           let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            // Full resolution (Retina screenshots stay sharp when pasted back); only
+            // very large images are scaled down, and the app's own PNG is kept as is.
+            let original = pasteboard.data(forType: .png).flatMap { $0.count <= 20_000_000 ? $0 : nil }
+            guard let png = original ?? cgImage.pngData(maxPixels: 6000) else { return nil }
+            return ClipboardItem(kind: .image, text: "\(cgImage.width)×\(cgImage.height)", data: png, sourceBundleID: source)
         }
         if let color = NSColor(from: pasteboard) {
             return ClipboardItem(kind: .color, text: color.hexString, sourceBundleID: source)
@@ -221,28 +234,30 @@ public final class ClipboardMonitor {
     }
 }
 
-extension NSImage {
-    /// PNG data scaled so the longest side is at most `maxDimension` points.
-    func downscaledPNG(maxDimension: CGFloat) -> Data? {
-        let longest = max(size.width, size.height)
-        let scale = longest > maxDimension ? maxDimension / longest : 1
-        let target = NSSize(width: max(1, size.width * scale), height: max(1, size.height * scale))
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: Int(target.width), pixelsHigh: Int(target.height),
-            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-        ) else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        draw(in: NSRect(origin: .zero, size: target), from: .zero, operation: .copy, fraction: 1)
-        NSGraphicsContext.restoreGraphicsState()
-        return rep.representation(using: .png, properties: [:])
-    }
-}
-
 extension NSColor {
     var hexString: String {
         guard let rgb = usingColorSpace(.sRGB) else { return "#000000" }
         return String(format: "#%02X%02X%02X", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255))
+    }
+}
+
+
+extension CGImage {
+    /// PNG data, scaled down only when the longest side exceeds `maxPixels`.
+    nonisolated func pngData(maxPixels: Int) -> Data? {
+        let longest = max(width, height)
+        var image = self
+        if longest > maxPixels {
+            let scale = Double(maxPixels) / Double(longest)
+            let size = (Int(Double(width) * scale), Int(Double(height) * scale))
+            guard let context = CGContext(data: nil, width: size.0, height: size.1, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            context.interpolationQuality = .high
+            context.draw(self, in: CGRect(x: 0, y: 0, width: size.0, height: size.1))
+            guard let scaled = context.makeImage() else { return nil }
+            image = scaled
+        }
+        return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
     }
 }

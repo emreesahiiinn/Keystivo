@@ -8,14 +8,17 @@ import Observation
 nonisolated public struct AppAudioSetting: Codable, Hashable, Sendable {
     public var volume: Float
     public var muted: Bool
+    /// Plays this app on a specific output (nil: the system output), SoundSource-style.
+    public var outputDeviceUID: String?
 
-    public init(volume: Float = 1, muted: Bool = false) {
+    public init(volume: Float = 1, muted: Bool = false, outputDeviceUID: String? = nil) {
         self.volume = volume
         self.muted = muted
+        self.outputDeviceUID = outputDeviceUID
     }
 
     /// Default settings need no tap (zero CPU cost).
-    public var isDefault: Bool { abs(volume - 1) < 0.005 && !muted }
+    public var isDefault: Bool { abs(volume - 1) < 0.005 && !muted && outputDeviceUID == nil }
     public var effectiveGain: Float { muted ? 0 : volume }
 }
 
@@ -36,11 +39,19 @@ public final class AppAudioController {
 
     public private(set) var entries: [AppAudioEntry] = []
     public var settings: [String: AppAudioSetting] = [:] {
-        didSet { onSettingsChange?(settings) }
+        didSet {
+            onSettingsChange?(settings)
+            // Profiles, imports and Settings change levels too, not only the mixer.
+            if settings != oldValue { syncTaps() }
+        }
     }
     /// Master switch; when off no taps exist and Keystivo touches no app audio.
     public var isEnabled = true {
         didSet { syncTaps() }
+    }
+    /// Power saving: drop volume adjustments but keep muted apps muted.
+    public var keepsOnlyMutes = false {
+        didSet { if keepsOnlyMutes != oldValue { syncTaps() } }
     }
     public private(set) var lastError: String?
     public static var isSupported: Bool { true }
@@ -193,6 +204,13 @@ public final class AppAudioController {
         setMuted(!setting(for: bundleID).muted, for: bundleID)
     }
 
+    /// nil sends the app back to the system output.
+    public func setOutputDevice(_ uid: String?, for bundleID: String) {
+        var setting = setting(for: bundleID)
+        setting.outputDeviceUID = uid
+        store(setting, for: bundleID)
+    }
+
     public func reset(_ bundleID: String) { store(AppAudioSetting(), for: bundleID) }
 
     public func resetAll() {
@@ -201,13 +219,8 @@ public final class AppAudioController {
     }
 
     private func store(_ setting: AppAudioSetting, for bundleID: String) {
+        // The settings observer applies the new level (and creates or removes the tap).
         if setting.isDefault { settings[bundleID] = nil } else { settings[bundleID] = setting }
-        if let tap = taps[bundleID] {
-            tap.gain = setting.effectiveGain
-            if setting.isDefault { syncTaps() }
-        } else {
-            syncTaps()
-        }
     }
 
     /// Recent peak level (0…1) for meters; resets on read.
@@ -215,26 +228,52 @@ public final class AppAudioController {
         taps[bundleID]?.levels.takePeak() ?? 0
     }
 
+    @ObservationIgnored private var meterLevels: [String: (level: Float, read: Date)] = [:]
+
+    /// Meter level with a smooth fall-off. Shared by every open mixer, so two
+    /// views reading at once don't steal each other's peaks.
+    public func meterLevel(for bundleID: String) -> Float {
+        let previous = meterLevels[bundleID] ?? (0, .distantPast)
+        let now = Date.now
+        guard now.timeIntervalSince(previous.read) >= 0.04 else { return previous.level }
+        let peak = takePeak(for: bundleID)
+        let level = max(peak, previous.level * 0.82)
+        meterLevels[bundleID] = (level < 0.005 ? 0 : level, now)
+        return level
+    }
+
     public func hasActiveTap(_ bundleID: String) -> Bool { taps[bundleID] != nil }
 
     // MARK: Taps
 
+    /// The app's chosen output if it's connected, else the system output.
+    private func outputDevice(for bundleID: String) -> AudioDevice? {
+        let devices = AudioDeviceManager.shared
+        if let uid = setting(for: bundleID).outputDeviceUID, let device = devices.outputDevices.first(where: { $0.uid == uid }) {
+            return device
+        }
+        return devices.defaultOutput
+    }
+
     private func syncTaps() {
-        guard let output = AudioDeviceManager.shared.defaultOutput else { return }
+        guard AudioDeviceManager.shared.defaultOutput != nil else { return }
         var wanted: [String: AppAudioEntry] = [:]
         if isEnabled {
-            for entry in entries where !setting(for: entry.bundleID).isDefault {
+            for entry in entries where !setting(for: entry.bundleID).isDefault && (!keepsOnlyMutes || setting(for: entry.bundleID).muted) {
                 wanted[entry.bundleID] = entry
             }
         }
         for (bundleID, tap) in taps {
             let entry = wanted[bundleID]
-            if entry == nil || Set(entry!.processObjectIDs) != Set(tap.processObjectIDs) {
+            if entry == nil || Set(entry!.processObjectIDs) != Set(tap.processObjectIDs) || tap.outputUID != outputDevice(for: bundleID)?.uid {
                 tap.invalidate()
                 taps[bundleID] = nil
+            } else {
+                tap.gain = setting(for: bundleID).effectiveGain
             }
         }
         for (bundleID, entry) in wanted where taps[bundleID] == nil {
+            guard let output = outputDevice(for: bundleID) else { continue }
             do {
                 taps[bundleID] = try ProcessTap(
                     bundleID: bundleID, processObjectIDs: entry.processObjectIDs,

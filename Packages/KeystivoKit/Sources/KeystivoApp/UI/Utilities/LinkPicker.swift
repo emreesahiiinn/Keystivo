@@ -35,6 +35,10 @@ final class LinkRoutingController {
 
     @objc private func handleURLEvent(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue, let url = URL(string: string) else { return }
+        if url.scheme?.lowercased() == "keystivo" {
+            runtime.automationSources.handle(url)
+            return
+        }
         let senderPID = event.attributeDescriptor(forKeyword: keySenderPIDAttr)?.int32Value
         let source = senderPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
         route(url, sourceBundleID: source)

@@ -108,6 +108,8 @@ final class SystemMonitorStatusItem: NSObject {
         let wanted = settings.showsMonitor ? settings.monitorMetrics : []
         guard wanted != metrics || (item == nil) != wanted.isEmpty else { return }
         metrics = wanted
+        // GPU and sensors are only read while shown.
+        SystemMonitor.shared.samplesHardware = wanted.contains(where: \.usesHardware)
         if wanted.isEmpty { uninstall() } else { install() }
     }
 
@@ -253,6 +255,8 @@ private struct MonitorSegmentView: View {
             // Wide enough for the widest possible value, so it never wraps or jitters.
             .frame(width: Self.networkWidth, alignment: .trailing)
         case .disk: compact("internaldrive", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file), width: nil)
+        case .gpu: compact("square.stack.3d.up", snapshot.gpuUsage.map { "\(Int($0 * 100))%" } ?? "—", width: 27)
+        case .sensors: compact("thermometer.medium", snapshot.cpuTemperature.map { "\(Int($0.rounded()))°" } ?? "—", width: 24)
         }
     }
 
@@ -270,6 +274,30 @@ private struct MonitorSegmentView: View {
         let widest = ["↓ 999 B", "↓ 999 K", "↓ 9.9 M", "↓ 999 M", "↓ 9.9 G"].map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 40
         return ceil(widest) + 1
     }()
+}
+
+/// Temperatures, hottest first (grouped names shortened).
+private struct SensorList: View {
+    let sensors: [SensorReading]
+
+    var body: some View {
+        let sorted = sensors.sorted { $0.value > $1.value }.prefix(12)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L("monitor.sensors")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            if sorted.isEmpty {
+                Text(L("monitor.noSensors")).font(.caption).foregroundStyle(.tertiary)
+            }
+            ForEach(Array(sorted)) { sensor in
+                HStack {
+                    Text(sensor.name).font(.caption).lineLimit(1)
+                    Spacer()
+                    Text("\(Int(sensor.value.rounded()))°")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(sensor.value >= 90 ? Color.red : sensor.value >= 75 ? Color.orange : Color.secondary)
+                }
+            }
+        }
+    }
 }
 
 /// The popover of one menu bar metric.
@@ -324,6 +352,26 @@ struct MetricDetailView: View {
                 }
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
+            case .gpu:
+                header("square.stack.3d.up", L("monitor.metric.gpu"), snapshot.gpuUsage.map { "\(Int($0 * 100))%" } ?? "—")
+                ProgressView(value: min(max(snapshot.gpuUsage ?? 0, 0), 1)).tint(.teal)
+                Sparkline(values: monitor.gpuHistory, color: .teal).frame(height: 40)
+                activityMonitorLink
+            case .sensors:
+                header("thermometer.medium", L("monitor.metric.sensors"), snapshot.cpuTemperature.map { L("monitor.cpuTemperature", Int($0.rounded())) } ?? "—")
+                Sparkline(values: monitor.temperatureHistory, color: .red).frame(height: 36)
+                if !snapshot.fans.isEmpty || snapshot.systemPower != nil {
+                    HStack(spacing: 14) {
+                        ForEach(snapshot.fans) { fan in
+                            Label("\(Int(fan.rpm)) rpm", systemImage: "fan").font(.caption.monospacedDigit())
+                        }
+                        if let power = snapshot.systemPower {
+                            Label(String(format: "%.1f W", power), systemImage: "bolt").font(.caption.monospacedDigit())
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                SensorList(sensors: snapshot.sensors)
             }
         }
         .padding(16)
@@ -334,6 +382,7 @@ struct MetricDetailView: View {
                 .ignoresSafeArea()
         }
         .onAppear {
+            if metric.usesHardware { SystemMonitor.shared.samplesHardware = true }
             if metric == .cpu || metric == .memory {
                 SystemMonitor.shared.acquireProcesses(consumer)
             } else if metric == .network {

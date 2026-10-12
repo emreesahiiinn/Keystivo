@@ -35,6 +35,22 @@ nonisolated public enum TriggerSpec: Codable, Hashable, Sendable {
     case keystivoLaunched
     /// Only runs when invoked from the launcher, menu bar or another workflow.
     case manual
+    /// The text is typed anywhere (it's deleted before the workflow runs).
+    case typedText(String)
+    case clipboardChanged
+    /// Empty matches any volume.
+    case volumeMounted(match: String)
+    case volumeUnmounted(match: String)
+    /// Network connectivity or interface (Wi-Fi, Ethernet, VPN) changed.
+    case networkChanged
+    /// No keyboard or mouse input for this many minutes.
+    case userIdle(minutes: Int)
+    /// Input resumed after being idle.
+    case userReturned
+    /// Light/dark appearance switched.
+    case appearanceChanged
+    /// `keystivo://run/<name>` (Stream Deck, Shortcuts, scripts, other apps).
+    case urlScheme(name: String)
 
     public var kind: String {
         switch self {
@@ -61,6 +77,15 @@ nonisolated public enum TriggerSpec: Codable, Hashable, Sendable {
         case .focusEnded: "focusEnded"
         case .keystivoLaunched: "keystivoLaunched"
         case .manual: "manual"
+        case .typedText: "typedText"
+        case .clipboardChanged: "clipboardChanged"
+        case .volumeMounted: "volumeMounted"
+        case .volumeUnmounted: "volumeUnmounted"
+        case .networkChanged: "networkChanged"
+        case .userIdle: "userIdle"
+        case .userReturned: "userReturned"
+        case .appearanceChanged: "appearanceChanged"
+        case .urlScheme: "urlScheme"
         }
     }
 
@@ -87,18 +112,34 @@ nonisolated public enum TriggerSpec: Codable, Hashable, Sendable {
         case .focusStarted, .focusEnded: "moon.circle"
         case .keystivoLaunched: "power"
         case .manual: "hand.tap"
+        case .typedText: "character.cursor.ibeam"
+        case .clipboardChanged: "clipboard"
+        case .volumeMounted, .volumeUnmounted: "externaldrive"
+        case .networkChanged: "network"
+        case .userIdle: "zzz"
+        case .userReturned: "figure.walk.arrival"
+        case .appearanceChanged: "circle.lefthalf.filled"
+        case .urlScheme: "link"
         }
     }
 
     /// Templates used by the "add trigger" menu.
     public static let templates: [TriggerSpec] = [
         .appLaunched(bundleID: ""), .appQuit(bundleID: ""), .appActivated(bundleID: ""), .appDeactivated(bundleID: ""),
-        .hotkey(KeyCombo(keyCode: 0, modifiers: .hyper)), .schedule(hour: 9, minute: 0, weekdays: []), .interval(minutes: 30),
+        .hotkey(.unset), .schedule(hour: 9, minute: 0, weekdays: []), .interval(minutes: 30),
         .systemWake, .systemSleep, .screenLocked, .screenUnlocked, .displayConnected, .displayDisconnected,
         .powerSourceChanged(to: .battery), .batteryBelow(percent: 20), .audioOutputChanged,
         .inputDeviceConnected(match: ""), .inputDeviceDisconnected(match: ""), .profileActivated(nil),
         .focusStarted, .focusEnded, .keystivoLaunched, .manual,
+        .typedText(""), .clipboardChanged, .volumeMounted(match: ""), .volumeUnmounted(match: ""), .networkChanged,
+        .userIdle(minutes: 10), .userReturned, .appearanceChanged, .urlScheme(name: ""),
     ]
+
+    /// Typed text that should trigger, if this is a typed-text trigger.
+    public var typedText: String? {
+        if case .typedText(let text) = self, !text.isEmpty { return text }
+        return nil
+    }
 }
 
 /// A runtime occurrence that may fire triggers.
@@ -120,6 +161,16 @@ nonisolated public enum AutomationEvent: Hashable, Sendable {
     case profileActivated(UUID)
     case focusStarted, focusEnded
     case keystivoLaunched
+    case typedText(String)
+    case clipboardChanged
+    case volumeMounted(String)
+    case volumeUnmounted(String)
+    case networkChanged
+    /// Idle for this many whole minutes so far.
+    case userIdle(minutes: Int)
+    case userReturned
+    case appearanceChanged
+    case url(String)
 }
 
 nonisolated public extension TriggerSpec {
@@ -154,6 +205,19 @@ nonisolated public extension TriggerSpec {
             return match.isEmpty || name.localizedCaseInsensitiveContains(match)
         case (.profileActivated(let wanted), .profileActivated(let id)):
             return wanted == nil || wanted == id
+        case (.typedText(let wanted), .typedText(let typed)):
+            return !wanted.isEmpty && wanted == typed
+        case (.clipboardChanged, .clipboardChanged), (.networkChanged, .networkChanged),
+             (.userReturned, .userReturned), (.appearanceChanged, .appearanceChanged):
+            return true
+        case (.volumeMounted(let match), .volumeMounted(let name)),
+             (.volumeUnmounted(let match), .volumeUnmounted(let name)):
+            return match.isEmpty || name.localizedCaseInsensitiveContains(match)
+        case (.userIdle(let wanted), .userIdle(let minutes)):
+            // Fires once, at the minute the idle time reaches the threshold.
+            return wanted == minutes
+        case (.urlScheme(let wanted), .url(let name)):
+            return !wanted.isEmpty && wanted.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
         default:
             return false
         }
@@ -178,6 +242,10 @@ nonisolated public indirect enum ConditionSpec: Codable, Hashable, Sendable {
     case audioOutput(deviceUID: String)
     case inputDeviceConnected(match: String)
     case focusActive(Bool)
+    /// Workflow variables ({{name}}), set by earlier steps.
+    case variableEquals(name: String, value: String)
+    case variableContains(name: String, value: String)
+    case variableNotEmpty(name: String)
     case all([ConditionSpec])
     case any([ConditionSpec])
     case not(ConditionSpec)
@@ -197,6 +265,9 @@ nonisolated public indirect enum ConditionSpec: Codable, Hashable, Sendable {
         case .audioOutput: "audioOutput"
         case .inputDeviceConnected: "inputDeviceConnected"
         case .focusActive: "focusActive"
+        case .variableEquals: "variableEquals"
+        case .variableContains: "variableContains"
+        case .variableNotEmpty: "variableNotEmpty"
         case .all: "all"
         case .any: "any"
         case .not: "not"
@@ -210,6 +281,7 @@ nonisolated public indirect enum ConditionSpec: Codable, Hashable, Sendable {
         .timeBetween(start: 9 * 60, end: 18 * 60), .weekdays([2, 3, 4, 5, 6]), .powerSource(.battery),
         .batteryBelow(percent: 30), .batteryAbove(percent: 80), .displayCountAtLeast(2),
         .inputDeviceConnected(match: ""), .focusActive(true),
+        .variableEquals(name: "output", value: ""), .variableContains(name: "output", value: ""), .variableNotEmpty(name: "output"),
     ]
 }
 
@@ -229,8 +301,14 @@ public protocol AutomationEnvironment {
 }
 
 public enum ConditionEvaluator {
-    public static func evaluate(_ condition: ConditionSpec, in environment: some AutomationEnvironment) -> Bool {
+    public static func evaluate(_ condition: ConditionSpec, in environment: some AutomationEnvironment, variables: [String: String] = [:]) -> Bool {
         switch condition {
+        case .variableEquals(let name, let value):
+            return (variables[name] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == value.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .variableContains(let name, let value):
+            return !value.isEmpty && (variables[name] ?? "").localizedCaseInsensitiveContains(value)
+        case .variableNotEmpty(let name):
+            return !(variables[name] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .appRunning(let id): return environment.isRunning(id)
         case .appNotRunning(let id): return !environment.isRunning(id)
         case .appFrontmost(let id): return environment.frontmostBundleID == id
@@ -257,11 +335,11 @@ public enum ConditionEvaluator {
         case .focusActive(let active):
             return environment.isFocusActive == active
         case .all(let conditions):
-            return conditions.allSatisfy { evaluate($0, in: environment) }
+            return conditions.allSatisfy { evaluate($0, in: environment, variables: variables) }
         case .any(let conditions):
-            return conditions.isEmpty || conditions.contains { evaluate($0, in: environment) }
+            return conditions.isEmpty || conditions.contains { evaluate($0, in: environment, variables: variables) }
         case .not(let inner):
-            return !evaluate(inner, in: environment)
+            return !evaluate(inner, in: environment, variables: variables)
         }
     }
 }
@@ -276,6 +354,9 @@ nonisolated public struct WorkflowStep: Codable, Hashable, Sendable, Identifiabl
     public var isEnabled = true
     /// Keep going even if this step fails.
     public var continueOnError = false
+    /// Saves the action's result (shell output, HTTP response…) as {{name}} too;
+    /// it's always available as {{output}} until the next result.
+    public var outputVariable: String?
 
     public indirect enum Kind: Codable, Hashable, Sendable {
         case action(ActionInvocation)
@@ -283,6 +364,16 @@ nonisolated public struct WorkflowStep: Codable, Hashable, Sendable, Identifiabl
         case condition(ConditionSpec, then: [WorkflowStep], otherwise: [WorkflowStep])
         case runWorkflow(UUID)
         case stop
+        /// Sets {{name}}; the value may use other placeholders.
+        case setVariable(name: String, value: String)
+        /// Runs the steps `times` times; {{index}} is 1, 2, 3…
+        case repeatTimes(Int, steps: [WorkflowStep])
+        /// Pauses until the condition holds; fails after `timeout` seconds.
+        case waitUntil(ConditionSpec, timeout: Double)
+        /// Asks for text and stores it as {{variable}}; cancelling stops the workflow.
+        case askInput(prompt: String, variable: String)
+        /// Shows text in large type.
+        case showText(String)
     }
 
     public init(_ kind: Kind) { self.kind = kind }

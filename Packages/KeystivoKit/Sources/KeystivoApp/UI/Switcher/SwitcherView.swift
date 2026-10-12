@@ -30,8 +30,19 @@ struct SwitcherView: View {
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Capsule().fill(Color.accentColor.opacity(0.2)))
                 }
+                if model.isSearching {
+                    HStack(spacing: 5) {
+                        Image(systemName: "magnifyingglass")
+                        Text(model.query.isEmpty ? L("switcher.searchPrompt") : model.query)
+                            .foregroundStyle(model.query.isEmpty ? .secondary : .primary)
+                        Rectangle().fill(Color.accentColor).frame(width: 1.5, height: 13)
+                    }
+                    .font(.callout.weight(.medium))
+                    .padding(.horizontal, 9).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                }
                 Spacer()
-                Text(L("switcher.hint"))
+                Text(L(model.isSearching ? "switcher.searchHint" : "switcher.hint"))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -90,7 +101,7 @@ private struct SwitcherCard: View {
     var body: some View {
         VStack(spacing: 6) {
             ZStack(alignment: .bottomLeading) {
-                if showsThumbnail {
+                if showsThumbnail, !window.isWindowless {
                     thumbnail
                         .frame(width: width - 12, height: width * 0.62 - 12)
                     AppIconView(bundleID: window.bundleID, size: 30)
@@ -98,10 +109,12 @@ private struct SwitcherCard: View {
                         .offset(x: -4, y: 6)
                 } else {
                     AppIconView(bundleID: window.bundleID, size: 64)
-                        .frame(width: width - 12, height: 72)
+                        .frame(width: width - 12, height: showsThumbnail ? width * 0.62 - 12 : 72)
+                        .opacity(window.isWindowless ? 0.85 : 1)
                 }
             }
             HStack(spacing: 4) {
+                if window.isWindowless { Image(systemName: "macwindow.badge.plus").font(.caption2).help(L("switcher.noWindowsOpen")) }
                 if window.isMinimized { Image(systemName: "minus.square").font(.caption2) }
                 if window.isOnOtherSpace { Image(systemName: "square.on.square.dashed").font(.caption2) }
                 Text(window.displayTitle)

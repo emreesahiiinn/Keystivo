@@ -41,6 +41,16 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
+			<string>Keystivo automation</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>keystivo</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
 			<string>Web site URL</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
@@ -117,6 +127,10 @@
 	<string>Keystivo controls System Events and Finder only when you run system commands such as toggling Dark Mode, emptying the Trash or restarting.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Keystivo uses the microphone only during a screen recording you start, and only when “Record the microphone” is turned on.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Keystivo shows your upcoming events in the launcher and lets you join video meetings. Events never leave your Mac.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Keystivo shows your upcoming events in the launcher and lets you join video meetings. Events never leave your Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Keystivo processes each app's audio in real time to provide per-app volume and mute. Audio is never recorded or stored.</string>
 </dict>

@@ -42,6 +42,8 @@ public final class KeystivoRuntime {
     @ObservationIgnored private(set) lazy var windowsUI = WindowPresenter(runtime: self)
     @ObservationIgnored private(set) lazy var automationEnvironment = LiveAutomationEnvironment(runtime: self)
     @ObservationIgnored private(set) lazy var dragSnapOverlay = DragSnapOverlay()
+    @ObservationIgnored private(set) lazy var automationSources = AutomationSources(runtime: self)
+    @ObservationIgnored private(set) lazy var quickAccess = QuickAccessOverlay(runtime: self)
     @ObservationIgnored private(set) lazy var menuBarManager = MenuBarManager()
     @ObservationIgnored private(set) lazy var systemMonitorItem = SystemMonitorStatusItem()
     @ObservationIgnored private(set) lazy var shelf = ShelfController()
@@ -114,11 +116,13 @@ public final class KeystivoRuntime {
         EventTapManager.shared.add(BrightnessKeyHandler.shared)
         _ = linkRouting
         _ = dragSnapOverlay
+        automationSources.start()
         // Focus follows mouse pauses while our own modal UI is on screen.
         FocusFollowsMouse.shared.isSuspended = { [unowned self] in
             launcher.isVisible || switcher.isVisible || hints.isRunning
         }
         EventTapManager.shared.add(FocusFollowsMouse.shared)
+        EventTapManager.shared.add(ModifierDragEngine.shared)
         EventTapManager.shared.add(ScrollEngine.shared)
         EventTapManager.shared.add(MouseButtonEngine.shared)
         EventTapManager.shared.add(HyperKeyEngine.shared)
@@ -148,6 +152,23 @@ public final class KeystivoRuntime {
         if let path = UserDefaults.standard.string(forKey: "KSAnnotateImage"), let image = NSImage(contentsOfFile: path) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.annotationEditor.open(image) }
         }
+        // `-KSShowLauncherMode root|emoji|menuItems|processes -KSLauncherQuery text` (inert: actions do nothing).
+        if let raw = UserDefaults.standard.string(forKey: "KSShowLauncherMode") {
+            let mode: LauncherMode = switch raw {
+            case "emoji": .emoji
+            case "menuItems": .menuItems
+            case "processes": .processes
+            case "files": .files
+            default: .root
+            }
+            launcher.model.isInertForTesting = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.launcher.show(mode: mode)
+                if let query = UserDefaults.standard.string(forKey: "KSLauncherQuery") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self?.launcher.model.query = query }
+                }
+            }
+        }
         // `-KSShowClipboard YES` (add `-KSConfirmClear YES` for the clear banner).
         if UserDefaults.standard.bool(forKey: "KSShowClipboard") {
             // Sample rows, no real pasting or deleting.
@@ -170,6 +191,13 @@ public final class KeystivoRuntime {
                 if let row = UserDefaults.standard.object(forKey: "KSRightClickRow") as? String, let index = Int(row) {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.launcher.debugRightClickRow(index) }
                 }
+            }
+        }
+        // `-KSTestModifierDrag /path/result.txt`: drags another app's window with ⌃⌥, then restores it.
+        if let output = UserDefaults.standard.string(forKey: "KSTestModifierDrag") {
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                await ModifierDragSelfTest.run(output: URL(fileURLWithPath: output))
             }
         }
         // `-KSTestFocusFollows /path/result.txt`: moves the pointer between two apps' windows.
@@ -330,7 +358,18 @@ public final class KeystivoRuntime {
             }
             if sourceChanged || level != previous { self.chargeLimiter.evaluate() }
         }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.applyKeyRemaps()
+                TrackpadGestureEngine.shared.restartIfRunning()
+            }
+        }
         InputDeviceMonitor.shared.onConnect = { [weak self] device in
+            if device.kind == .keyboard { self?.applyKeyRemaps() }
+            if device.kind == .trackpad || device.kind == .mouse {
+                // Let the new device finish appearing before re-enumerating.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { TrackpadGestureEngine.shared.restartIfRunning() }
+            }
             AutomationEngine.shared.handle(.inputDeviceConnected(device.name))
             self?.applyDeviceProfiles(device, connected: true)
         }
@@ -395,6 +434,11 @@ public final class KeystivoRuntime {
             drag.excludedBundleIDs = Set(new.windows.dragSnap.excludedApps)
             drag.gap = new.windows.gap
             if drag.isEnabled != new.windows.dragSnap.isEnabled { drag.isEnabled = new.windows.dragSnap.isEnabled }
+            let dragMove = ModifierDragEngine.shared
+            dragMove.modifiers = new.windows.modifierDrag.modifiers.modifiers
+            dragMove.raisesWindow = new.windows.modifierDrag.raisesWindow
+            dragMove.excludedBundleIDs = Set(new.windows.modifierDrag.excludedApps)
+            if dragMove.isEnabled != new.windows.modifierDrag.isEnabled { dragMove.isEnabled = new.windows.modifierDrag.isEnabled }
             let follow = FocusFollowsMouse.shared
             follow.delay = new.windows.focusFollowsMouse.delay
             follow.excludedBundleIDs = Set(new.windows.focusFollowsMouse.excludedApps)
@@ -403,6 +447,8 @@ public final class KeystivoRuntime {
             manager.gap = new.windows.gap
             manager.cyclesOnRepeat = new.windows.cyclesOnRepeat
             manager.preserveSnapAcrossDisplays = new.windows.preservesSnapAcrossDisplays
+            manager.repeatMovesAcrossDisplays = new.windows.repeatMovesAcrossDisplays
+            manager.restoresSizeOnDrag = new.windows.restoresSizeOnDrag
             if !applyingFromServices, LayoutManager.shared.layouts != new.windows.layouts {
                 LayoutManager.shared.layouts = new.windows.layouts
             }
@@ -458,19 +504,7 @@ public final class KeystivoRuntime {
             if HyperKeyEngine.shared.settings != new.input.hyper { HyperKeyEngine.shared.settings = new.input.hyper }
         }
         if changed(\.input.hyper) || changed(\.input.remaps) {
-            let remaps = new.input.remaps
-            let hyper = new.input.hyper
-            let needsMapping = hyper.isEnabled || remaps.contains(where: \.isEnabled)
-            if needsMapping || appliedKeyRemaps {
-                appliedKeyRemaps = needsMapping
-                Task {
-                    do {
-                        if needsMapping { try await KeyRemapper.apply(remaps: remaps, hyper: hyper) } else { await KeyRemapper.reset() }
-                    } catch {
-                        DiagnosticsCenter.shared.record(error, module: "Input", context: L("hyper.error.apply"))
-                    }
-                }
-            }
+            applyKeyRemaps()
         }
         if changed(\.menuBar) {
             menuBarManager.apply(new.menuBar)
@@ -520,12 +554,28 @@ public final class KeystivoRuntime {
 
     func applyPowerProfile(_ profile: PowerProfile) {
         PowerProfileApplier.apply(profile)
-        if profile.suspendsAppAudio { AppAudioController.shared.isEnabled = false } else {
-            AppAudioController.shared.isEnabled = config.audio.appVolumeEnabled
-        }
+        AppAudioController.shared.isEnabled = config.audio.appVolumeEnabled
+        AppAudioController.shared.keepsOnlyMutes = profile.suspendsAppAudio
         ClipboardMonitor.shared.setPaused(profile.pausesClipboard)
         config.system.activePowerProfileID = profile.id
         hud.show(symbol: profile.symbolName, text: L("power.profile.applied", profile.name))
+    }
+
+    /// Installs key remaps (and the Hyper trigger) with hidutil. Also re-run after
+    /// wake and when a keyboard connects: macOS may drop session mappings then.
+    func applyKeyRemaps() {
+        let remaps = config.input.remaps
+        let hyper = config.input.hyper
+        let needsMapping = hyper.isEnabled || remaps.contains(where: \.isEnabled)
+        guard needsMapping || appliedKeyRemaps else { return }
+        appliedKeyRemaps = needsMapping
+        Task {
+            do {
+                if needsMapping { try await KeyRemapper.apply(remaps: remaps, hyper: hyper) } else { await KeyRemapper.reset() }
+            } catch {
+                DiagnosticsCenter.shared.record(error, module: "Input", context: L("hyper.error.apply"))
+            }
+        }
     }
 
     private func applyDeviceProfiles(_ device: InputDeviceInfo, connected: Bool) {

@@ -107,6 +107,10 @@ nonisolated public struct KeyCombo: Codable, Hashable, Sendable, CustomStringCon
     @MainActor public var displayString: String { modifiers.symbols + keyDisplay }
 
     public var description: String { modifiers.symbols + "#\(keyCode)" }
+
+    /// Placeholder for "not recorded yet" (e.g. a new hotkey trigger). Never registered.
+    public static let unset = KeyCombo(keyCode: 0, modifiers: .hyper)
+    public var isUnset: Bool { self == .unset }
 }
 
 /// Virtual key code helpers and human-readable key names.
@@ -191,6 +195,17 @@ nonisolated public enum KeyCodes {
 /// Translates virtual key codes using the user's current keyboard layout,
 /// so shortcuts display correctly on Turkish-Q, German, AZERTY, etc.
 public enum KeyboardLayout {
+    /// The key that types `character` with ⌘ held in the current layout
+    /// (⌘V is a different physical key on Turkish-F or Dvorak). Nil for
+    /// non-Latin layouts, where macOS matches ⌘ shortcuts by QWERTY position.
+    public static func keyCode(for target: Character) -> UInt16? {
+        let wanted = String(target).lowercased()
+        for code in UInt16(0)..<UInt16(51) where !KeyCodes.isModifierKey(code) {
+            if Self.character(for: code, modifiers: UInt32(cmdKey))?.lowercased() == wanted { return code }
+        }
+        return nil
+    }
+
     public static func character(for keyCode: UInt16, modifiers: UInt32 = 0) -> String? {
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue()
             ?? TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),

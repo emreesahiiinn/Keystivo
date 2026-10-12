@@ -45,9 +45,13 @@ nonisolated final class ProcessTap: @unchecked Sendable {
     private var procID: AudioDeviceIOProcID?
     private let queue = DispatchQueue(label: "com.keystivo.audio.tap", qos: .userInteractive)
 
+    /// The device this tap plays to.
+    let outputUID: String
+
     init(bundleID: String, processObjectIDs: [AudioObjectID], outputDevice: AudioDevice, gain: Float) throws {
         self.bundleID = bundleID
         self.processObjectIDs = processObjectIDs
+        self.outputUID = outputDevice.uid
         levels.target = gain
 
         let description = CATapDescription(stereoMixdownOfProcesses: processObjectIDs)

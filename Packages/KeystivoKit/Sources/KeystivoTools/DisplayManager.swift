@@ -39,6 +39,17 @@ public final class DisplayManager {
     /// Software dimming per display (1 = untouched).
     public private(set) var dimming: [CGDirectDisplayID: Double] = [:]
     @ObservationIgnored private var observer: (any NSObjectProtocol)?
+    @ObservationIgnored private var wakeObservers: [any NSObjectProtocol] = []
+    /// Each display's own (calibrated) curves, captured before the first dimming.
+    @ObservationIgnored private var originalTables: [CGDirectDisplayID: GammaTable] = [:]
+    /// What Keystivo last wrote, to tell whether macOS has reset the curves since.
+    @ObservationIgnored private var appliedTables: [CGDirectDisplayID: GammaTable] = [:]
+
+    struct GammaTable: Equatable {
+        var red: [CGGammaValue]
+        var green: [CGGammaValue]
+        var blue: [CGGammaValue]
+    }
 
     public init() {}
 
@@ -50,6 +61,15 @@ public final class DisplayManager {
                 self?.reload()
                 self?.reapplyDimming()
             }
+        }
+        // macOS reloads ColorSync curves after sleep, which undoes the dimming.
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+            wakeObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    MainActor.assumeIsolated { self?.reapplyDimming() }
+                }
+            })
         }
     }
 
@@ -102,23 +122,62 @@ public final class DisplayManager {
         apply(clamped, to: display)
     }
 
+    /// Scales the display's own curves (keeping its calibration); level 1 puts them back.
     private func apply(_ level: Double, to display: CGDirectDisplayID) {
         if level >= 0.999 {
-            CGDisplayRestoreColorSyncSettings()
-            for (other, value) in dimming where other != display && value < 0.999 { apply(value, to: other) }
+            appliedTables[display] = nil
+            if let original = originalTables.removeValue(forKey: display) {
+                set(original, on: display)
+            } else {
+                CGDisplayRestoreColorSyncSettings()
+                for (other, value) in dimming where other != display && value < 0.999 { apply(value, to: other) }
+            }
             return
         }
-        let max = CGGammaValue(level)
-        CGSetDisplayTransferByFormula(display, 0, max, 1, 0, max, 1, 0, max, 1)
+        if originalTables[display] == nil { originalTables[display] = currentTable(of: display) }
+        guard let original = originalTables[display] else {
+            let max = CGGammaValue(level)
+            CGSetDisplayTransferByFormula(display, 0, max, 1, 0, max, 1, 0, max, 1)
+            return
+        }
+        let scale = CGGammaValue(level)
+        let dimmed = GammaTable(red: original.red.map { $0 * scale }, green: original.green.map { $0 * scale }, blue: original.blue.map { $0 * scale })
+        set(dimmed, on: display)
+        appliedTables[display] = currentTable(of: display) ?? dimmed
+    }
+
+    private func currentTable(of display: CGDirectDisplayID) -> GammaTable? {
+        let capacity = Int(CGDisplayGammaTableCapacity(display))
+        guard capacity > 0 else { return nil }
+        var red = [CGGammaValue](repeating: 0, count: capacity)
+        var green = red, blue = red
+        var count: UInt32 = 0
+        guard CGGetDisplayTransferByTable(display, UInt32(capacity), &red, &green, &blue, &count) == .success, count > 0 else { return nil }
+        let length = Int(count)
+        return GammaTable(red: Array(red.prefix(length)), green: Array(green.prefix(length)), blue: Array(blue.prefix(length)))
+    }
+
+    private func set(_ table: GammaTable, on display: CGDirectDisplayID) {
+        CGSetDisplayTransferByTable(display, UInt32(table.red.count), table.red, table.green, table.blue)
     }
 
     private func reapplyDimming() {
-        for (display, level) in dimming where level < 0.999 { apply(level, to: display) }
+        for (display, level) in dimming where level < 0.999 {
+            // Untouched since we dimmed it: nothing to do. Reset by macOS (wake,
+            // reconnect): the current curves are the calibrated ones again.
+            let current = currentTable(of: display)
+            if let current, current == appliedTables[display] { continue }
+            if let current { originalTables[display] = current } else { originalTables[display] = nil }
+            apply(level, to: display)
+        }
     }
 
     /// Restores every display's original color curves.
     public func restoreAll() {
         dimming.removeAll()
-        CGDisplayRestoreColorSyncSettings()
+        if originalTables.isEmpty { return }
+        for (display, table) in originalTables { set(table, on: display) }
+        originalTables.removeAll()
+        appliedTables.removeAll()
     }
 }

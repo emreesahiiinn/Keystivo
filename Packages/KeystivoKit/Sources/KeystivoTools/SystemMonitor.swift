@@ -17,6 +17,12 @@ nonisolated public struct SystemSnapshot: Sendable, Equatable {
     public var diskTotal: Int64 = 0
     public var uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     public var thermalState: ProcessInfo.ThermalState = .nominal
+    // Hardware (only while a GPU or sensor display needs it).
+    public var gpuUsage: Double?
+    public var cpuTemperature: Double?
+    public var sensors: [SensorReading] = []
+    public var fans: [FanReading] = []
+    public var systemPower: Double?
 
     public init() {}
 }
@@ -54,6 +60,10 @@ public final class SystemMonitor {
     @ObservationIgnored private let networkSampler = NetworkUsageSampler()
     @ObservationIgnored private var networkConsumers = Set<String>()
     @ObservationIgnored private var isSamplingNetwork = false
+    /// Read GPU, temperatures, fans and power too (set while such a metric is shown).
+    @ObservationIgnored public var samplesHardware = false
+    public private(set) var gpuHistory: [Double] = []
+    public private(set) var temperatureHistory: [Double] = []
     public var interval: TimeInterval = 2
 
     public init() {}
@@ -190,6 +200,16 @@ public final class SystemMonitor {
         next.diskFree = disk?.free ?? 0
         next.diskTotal = disk?.total ?? 0
         next.thermalState = ProcessInfo.processInfo.thermalState
+        if samplesHardware {
+            let sensors = HardwareSensors.shared
+            next.gpuUsage = sensors.gpuUsage()
+            next.sensors = sensors.temperatures()
+            next.cpuTemperature = HardwareSensors.cpuTemperature(from: next.sensors)
+            next.fans = sensors.fans()
+            next.systemPower = sensors.systemPower()
+            if let gpu = next.gpuUsage { gpuHistory = Array((gpuHistory + [gpu]).suffix(40)) }
+            if let temperature = next.cpuTemperature { temperatureHistory = Array((temperatureHistory + [temperature]).suffix(40)) }
+        }
         snapshot = next
         if !processConsumers.isEmpty { sampleProcesses() }
         if !networkConsumers.isEmpty { sampleNetwork() }

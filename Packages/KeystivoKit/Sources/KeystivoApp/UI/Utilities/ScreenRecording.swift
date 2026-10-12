@@ -212,6 +212,7 @@ final class RecordingController {
         options.capturesSystemAudio = settings.recordingCapturesAudio
         options.capturesMicrophone = settings.recordingCapturesMicrophone
         options.usesHEVC = settings.recordingUsesHEVC
+        options.framesPerSecond = settings.recordingFrameRate
         options.excludedWindowNumbers = [controlPanel, borderWindow].compactMap { $0?.windowNumber }
         do {
             try await recorder.start(display: selection.screen.displayID, area: selection.rect, options: options)
@@ -224,8 +225,33 @@ final class RecordingController {
 
     private func finished(_ result: Result<URL, any Error>) {
         hideChrome()
+        let format = runtime.config.tools.recordingFormat
+        if case .success(let movie) = result, format != .mov {
+            // Convert first (GIF can take a moment), then reveal/open/copy the result.
+            runtime.hud.show(symbol: "hourglass", text: L("record.converting", L(format.titleKey)))
+            Task {
+                do {
+                    let converted = try await RecordingExporter.export(movie, as: format)
+                    finished(converted)
+                } catch {
+                    // The original movie is kept if conversion fails.
+                    runtime.hud.show(symbol: "exclamationmark.triangle", text: L("record.convertFailed"), style: .warning)
+                    finished(movie)
+                }
+            }
+            return
+        }
         switch result {
         case .success(let url):
+            finished(url)
+        case .failure(let error):
+            runtime.hud.show(symbol: "exclamationmark.triangle", text: error.localizedDescription, style: .warning)
+            DiagnosticsCenter.shared.record(error, module: "Tools", context: L("action.tools.recordScreen"))
+        }
+    }
+
+    private func finished(_ url: URL) {
+        do {
             runtime.hud.show(symbol: "checkmark.circle", text: L("record.saved", url.lastPathComponent))
             switch runtime.config.tools.recordingAfter {
             case .reveal: NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -234,9 +260,6 @@ final class RecordingController {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([url as NSURL])
             }
-        case .failure(let error):
-            runtime.hud.show(symbol: "exclamationmark.triangle", text: error.localizedDescription, style: .warning)
-            DiagnosticsCenter.shared.record(error, module: "Tools", context: L("action.tools.recordScreen"))
         }
     }
 

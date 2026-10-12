@@ -128,8 +128,25 @@ final class ConfigurationStore {
         for section in sections where file.sections.contains(section.rawValue) {
             Self.copy(section, from: file.configuration, to: &updated)
         }
+        Self.quarantineImported(&updated, keepingTrustFrom: configuration)
         updated.general.hasCompletedOnboarding = true
         configuration = updated
+    }
+
+    /// Imported settings never arrive able to run code unreviewed: plugin trust
+    /// stays this Mac's own, and shortcuts or folder rules that run scripts or
+    /// plugins come in switched off (workflows already import disabled).
+    static func quarantineImported(_ config: inout KeystivoConfiguration, keepingTrustFrom current: KeystivoConfiguration) {
+        config.plugins.trusted = current.plugins.trusted
+        let runsCode: (String) -> Bool = { $0 == "system.runShellScript" || $0 == "system.runAppleScript" || $0.hasPrefix("plugin.") }
+        for index in config.hotkeys.indices where config.hotkeys[index].actions.contains(where: { runsCode($0.actionID) }) {
+            if !current.hotkeys.contains(config.hotkeys[index]) { config.hotkeys[index].isEnabled = false }
+        }
+        for index in config.files.folderRules.indices {
+            let rule = config.files.folderRules[index]
+            let scripted = rule.actions.contains { if case .runShellScript = $0 { true } else { false } }
+            if scripted, !current.files.folderRules.contains(rule) { config.files.folderRules[index].isEnabled = false }
+        }
     }
 
     static func copy(_ section: KeystivoConfiguration.Section, from source: KeystivoConfiguration, to target: inout KeystivoConfiguration) {

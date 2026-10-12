@@ -182,6 +182,27 @@ extension BuiltinActions {
         register("launcher.quickActions", "text.cursor", .launcher, keywords: ["transform", "selected text", "uppercase"]) { _, _ in
             runtime.launcher.show(mode: .textActions)
         }
+        register("launcher.emoji", "face.smiling", .launcher, keywords: ["emoji", "symbol", "character", "smiley", "unicode"]) { _, _ in
+            runtime.launcher.show(mode: .emoji)
+        }
+        register("launcher.menuItems", "filemenu.and.selection", .launcher, keywords: ["menu", "menu bar", "command", "search menu"]) { _, _ in
+            runtime.launcher.show(mode: .menuItems)
+        }
+        register("launcher.processes", "cpu", .launcher, keywords: ["kill", "process", "activity monitor", "force quit", "cpu", "memory"]) { _, _ in
+            runtime.launcher.show(mode: .processes)
+        }
+        register("launcher.schedule", "calendar", .launcher, keywords: ["calendar", "schedule", "agenda", "meeting", "events", "today"]) { _, _ in
+            runtime.launcher.show(mode: .schedule)
+        }
+        register("calendar.joinNextMeeting", "video", .launcher, keywords: ["meeting", "join", "zoom", "meet", "teams", "call"]) { _, _ in
+            guard await CalendarService.shared.requestAccess() else { throw ActionError.failed(L("schedule.accessDenied")) }
+            guard let meeting = CalendarService.shared.nextMeeting(), let link = meeting.meetingURL else {
+                runtime.hud.show(symbol: "video.slash", text: L("schedule.noMeeting"))
+                return
+            }
+            NSWorkspace.shared.open(link)
+            runtime.hud.show(symbol: "video", text: L("schedule.joining", meeting.title))
+        }
         register("app.settings", "gearshape", .system, keywords: ["preferences", "settings", "keystivo"]) { _, _ in
             runtime.windowsUI.showSettings()
         }
@@ -271,6 +292,7 @@ extension BuiltinActions {
         ], launcher: false) { arguments, _ in
             let mode = KeepAwakeMode(rawValue: arguments.string("mode") ?? "") ?? .system
             let minutes = arguments.double("minutes") ?? 0
+            KeepAwakeController.shared.isSetByProfile = false
             KeepAwakeController.shared.set(mode, duration: minutes > 0 ? minutes * 60 : nil)
         }
         register("system.notify", "bell", .automation, parameters: [
@@ -314,19 +336,76 @@ extension BuiltinActions {
         }
         register("system.runShellScript", "terminal", .automation, parameters: [
             ParameterSpec("script", "param.script", .multilineText),
-        ], launcher: false) { arguments, _ in
+        ], launcher: false) { arguments, context in
             let output = try await SystemCommandRunner.shell("/bin/zsh", ["-lc", try arguments.require("script")], timeout: .seconds(60))
-            if !output.isEmpty { runtime.hud.show(symbol: "terminal", text: String(output.prefix(120))) }
+            context.emit(output)
+            if !output.isEmpty, context.source != .workflow { runtime.hud.show(symbol: "terminal", text: String(output.prefix(120))) }
         }
         register("system.runAppleScript", "applescript", .automation, parameters: [
             ParameterSpec("script", "param.script", .multilineText),
-        ], launcher: false) { arguments, _ in
-            try SystemCommandRunner.appleScript(try arguments.require("script"))
+        ], launcher: false) { arguments, context in
+            let output = try await SystemCommandRunner.appleScript(try arguments.require("script"))
+            context.emit(output)
+            if !output.isEmpty, context.source != .workflow { runtime.hud.show(symbol: "applescript", text: String(output.prefix(120))) }
         }
         register("system.runShortcut", "square.2.layers.3d", .automation, parameters: [
             ParameterSpec("name", "param.shortcutName", .text),
+            ParameterSpec("input", "param.input", .multilineText, optional: true),
+        ], launcher: false) { arguments, context in
+            let input = arguments.string("input").flatMap { $0.isEmpty ? nil : $0 }
+            context.emit(try await SystemCommandRunner.runShortcut(named: try arguments.require("name"), input: input))
+        }
+        // Keyboard Maestro-style building blocks for workflows.
+        register("automation.httpRequest", "network", .automation, parameters: [
+            ParameterSpec("url", "param.url", .url),
+            ParameterSpec("method", "param.method", .choice([ChoiceOption("GET", "http.get"), ChoiceOption("POST", "http.post"), ChoiceOption("PUT", "http.put"), ChoiceOption("DELETE", "http.delete")]), default: .string("GET")),
+            ParameterSpec("body", "param.body", .multilineText, optional: true),
+            ParameterSpec("contentType", "param.contentType", .text, default: .string("application/json")),
+        ], launcher: false) { arguments, context in
+            guard let url = URL(string: try arguments.require("url")), url.scheme?.hasPrefix("http") == true else {
+                throw ActionError.failed(L("action.error.invalidURL"))
+            }
+            var request = URLRequest(url: url, timeoutInterval: 30)
+            request.httpMethod = arguments.string("method") ?? "GET"
+            if let body = arguments.string("body"), !body.isEmpty, request.httpMethod != "GET" {
+                request.httpBody = Data(body.utf8)
+                request.setValue(arguments.string("contentType") ?? "application/json", forHTTPHeaderField: "Content-Type")
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let text = String(data: data, encoding: .utf8) ?? ""
+            if let status = (response as? HTTPURLResponse)?.statusCode, status >= 400 {
+                throw ActionError.failed(L("automation.error.http", status, String(text.prefix(200))))
+            }
+            context.emit(text)
+        }
+        register("automation.selectMenuItem", "filemenu.and.selection", .automation, parameters: [
+            ParameterSpec("path", "param.menuPath", .text),
         ], launcher: false) { arguments, _ in
-            try await SystemCommandRunner.runShortcut(named: try arguments.require("name"))
+            guard let app = NSWorkspace.shared.frontmostApplication else { throw ActionError.notAvailable(L("menuItems.failed")) }
+            let wanted = try arguments.require("path").split(whereSeparator: { $0 == ">" || $0 == "›" })
+                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            let pid = app.processIdentifier
+            let entries = await Task.detached { MenuItemCollector.items(pid: pid) }.value
+            // Full path ("File > Export > PDF"), or just the item title when unique.
+            let match = entries.first { ($0.path + [$0.title]).map { $0.lowercased() } == wanted }
+                ?? entries.first { wanted.count == 1 && $0.title.lowercased() == wanted[0] }
+                ?? entries.first { ($0.path + [$0.title]).map { $0.lowercased() }.joined(separator: ">").hasSuffix(wanted.joined(separator: ">")) }
+            guard let match, match.isEnabled, match.perform() else {
+                throw ActionError.failed(L("automation.error.menuItem", wanted.joined(separator: " › ")))
+            }
+        }
+        register("automation.transformText", "textformat", .automation, parameters: [
+            ParameterSpec("text", "param.text", .multilineText, default: .string("{{output}}")),
+            ParameterSpec("transform", "param.transform", .choice(TextTransform.allCases.map { ChoiceOption($0.rawValue, $0.titleKey) }), default: .string(TextTransform.uppercase.rawValue)),
+        ], launcher: false) { arguments, context in
+            guard let transform = arguments.string("transform").flatMap(TextTransform.init(rawValue:)),
+                  let result = transform.apply(arguments.string("text") ?? "", locale: Localizer.shared.locale) else {
+                throw ActionError.failed(L("automation.error.transform"))
+            }
+            context.emit(result)
+        }
+        register("automation.readClipboard", "clipboard", .automation, launcher: false) { _, context in
+            context.emit(NSPasteboard.general.string(forType: .string) ?? "")
         }
     }
 }

@@ -150,9 +150,9 @@ struct WorkflowEditor: View {
             Section(L("automation.triggers")) {
                 ForEach($workflow.triggers.indices, id: \.self) { index in
                     HStack(alignment: .top) {
-                        TriggerEditor(trigger: $workflow.triggers[index])
+                        TriggerEditor(trigger: safeElement($workflow.triggers, index))
                         Spacer()
-                        Button { workflow.triggers.remove(at: index) } label: { Image(systemName: "trash") }
+                        Button { if workflow.triggers.indices.contains(index) { workflow.triggers.remove(at: index) } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless)
                     }
                 }
@@ -230,7 +230,7 @@ struct TriggerEditor: View {
             case .appDeactivated(let id):
                 AppPickerButton(bundleID: Binding(get: { id }, set: { trigger = .appDeactivated(bundleID: $0) }), placeholderKey: "automation.anyApp")
             case .hotkey(let combo):
-                KeyRecorder(combo: Binding(get: { combo.keyCode == 0 && combo.modifiers == .hyper ? nil : combo }, set: { if let new = $0 { trigger = .hotkey(new) } }))
+                KeyRecorder(combo: Binding(get: { combo.isUnset ? nil : combo }, set: { if let new = $0 { trigger = .hotkey(new) } }))
             case .schedule(let hour, let minute, let weekdays):
                 HStack {
                     DatePicker("", selection: Binding(
@@ -262,6 +262,25 @@ struct TriggerEditor: View {
                     ForEach(KeystivoRuntime.shared.config.workspace.profiles) { Text($0.name).tag(Optional($0.id)) }
                 }
                 .labelsHidden().fixedSize()
+            case .typedText(let text):
+                TextField(L("automation.typedTextPrompt"), text: Binding(get: { text }, set: { trigger = .typedText($0) }), prompt: Text(";;mail"))
+                    .font(.system(.callout, design: .monospaced))
+                Text(L("automation.typedTextHelp")).font(.caption2).foregroundStyle(.secondary)
+            case .volumeMounted(let match):
+                TextField(L("automation.volumeMatch"), text: Binding(get: { match }, set: { trigger = .volumeMounted(match: $0) }))
+            case .volumeUnmounted(let match):
+                TextField(L("automation.volumeMatch"), text: Binding(get: { match }, set: { trigger = .volumeUnmounted(match: $0) }))
+            case .userIdle(let minutes):
+                Stepper(L("automation.idleMinutes", minutes), value: Binding(get: { minutes }, set: { trigger = .userIdle(minutes: max(1, $0)) }), in: 1...240)
+            case .urlScheme(let name):
+                TextField(L("automation.urlName"), text: Binding(get: { name }, set: { trigger = .urlScheme(name: $0.replacingOccurrences(of: " ", with: "-")) }))
+                    .font(.system(.callout, design: .monospaced))
+                if !name.isEmpty {
+                    HStack {
+                        Text("keystivo://run/\(name)").font(.caption.monospaced()).textSelection(.enabled)
+                        Button(L("launcher.action.copyURL")) { Pasteboard.copy("keystivo://run/\(name)") }.controlSize(.small)
+                    }
+                }
             default:
                 EmptyView()
             }
@@ -307,8 +326,9 @@ struct ConditionGroupEditor: View {
             .pickerStyle(.segmented)
             .fixedSize()
             ForEach(children.indices, id: \.self) { index in
+                let fallback = children[index]
                 HStack {
-                    ConditionRow(condition: Binding(get: { children[index] }, set: { replace(index, with: $0) }), runtime: runtime)
+                    ConditionRow(condition: Binding(get: { children.indices.contains(index) ? children[index] : fallback }, set: { replace(index, with: $0) }), runtime: runtime)
                     Spacer()
                     Button { remove(index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                 }
@@ -337,12 +357,14 @@ struct ConditionGroupEditor: View {
 
     private func replace(_ index: Int, with value: ConditionSpec) {
         var list = children
+        guard list.indices.contains(index) else { return }
         list[index] = value
         setChildren(list)
     }
 
     private func remove(_ index: Int) {
         var list = children
+        guard list.indices.contains(index) else { return }
         list.remove(at: index)
         setChildren(list)
     }
@@ -350,7 +372,7 @@ struct ConditionGroupEditor: View {
     private func append(_ value: ConditionSpec) { setChildren(children + [value]) }
 }
 
-private struct ConditionRow: View {
+struct ConditionRow: View {
     @Binding var condition: ConditionSpec
     let runtime: KeystivoRuntime
 
@@ -390,12 +412,26 @@ private struct ConditionRow: View {
                 TextField(L("automation.deviceMatch"), text: Binding(get: { match }, set: { condition = .inputDeviceConnected(match: $0) }))
             case .focusActive(let active):
                 Toggle("", isOn: Binding(get: { active }, set: { condition = .focusActive($0) })).labelsHidden()
+            case .variableEquals(let name, let value):
+                variableField(name) { condition = .variableEquals(name: $0, value: value) }
+                TextField(L("automation.value"), text: Binding(get: { value }, set: { condition = .variableEquals(name: name, value: $0) }))
+            case .variableContains(let name, let value):
+                variableField(name) { condition = .variableContains(name: $0, value: value) }
+                TextField(L("automation.value"), text: Binding(get: { value }, set: { condition = .variableContains(name: name, value: $0) }))
+            case .variableNotEmpty(let name):
+                variableField(name) { condition = .variableNotEmpty(name: $0) }
             case .not(let inner):
                 ConditionRow(condition: Binding(get: { inner }, set: { condition = .not($0) }), runtime: runtime)
             default:
                 EmptyView()
             }
         }
+    }
+
+    private func variableField(_ name: String, set: @escaping (String) -> Void) -> some View {
+        TextField(L("automation.variable"), text: Binding(get: { name }, set: set))
+            .font(.system(.callout, design: .monospaced))
+            .frame(width: 110)
     }
 
     private func timePicker(_ minutes: Int, set: @escaping (Int) -> Void) -> some View {
@@ -417,26 +453,42 @@ struct StepListEditor: View {
     @Binding var steps: [WorkflowStep]
     let runtime: KeystivoRuntime
     let depth: Int
+    @State private var outputEditIndex: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(steps.indices, id: \.self) { index in
                 HStack(alignment: .top, spacing: 8) {
-                    Toggle("", isOn: $steps[index].isEnabled).labelsHidden().toggleStyle(.checkbox)
-                    StepEditor(step: $steps[index], runtime: runtime, depth: depth)
+                    Toggle("", isOn: safeElement($steps, index).isEnabled).labelsHidden().toggleStyle(.checkbox)
+                    StepEditor(step: safeElement($steps, index), runtime: runtime, depth: depth)
                     Spacer(minLength: 0)
                     Menu {
                         Button(L("automation.moveUp")) { if index > 0 { steps.swapAt(index, index - 1) } }
                         Button(L("automation.moveDown")) { if index < steps.count - 1 { steps.swapAt(index, index + 1) } }
-                        Toggle(L("automation.continueOnError"), isOn: $steps[index].continueOnError)
+                        Toggle(L("automation.continueOnError"), isOn: safeElement($steps, index).continueOnError)
+                        if case .action = steps[index].kind {
+                            Button(L("automation.saveOutput")) { outputEditIndex = index }
+                        }
                         Divider()
-                        Button(L("common.delete"), role: .destructive) { steps.remove(at: index) }
+                        Button(L("common.delete"), role: .destructive) { if steps.indices.contains(index) { steps.remove(at: index) } }
                     } label: { Image(systemName: "ellipsis.circle") }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 }
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.035 + Double(depth) * 0.02)))
+                if steps.indices.contains(index), outputEditIndex == index || !(steps[index].outputVariable ?? "").isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.turn.down.right").foregroundStyle(.secondary)
+                        Text(L("automation.outputTo")).font(.caption).foregroundStyle(.secondary)
+                        TextField("name", text: Binding(get: { steps.indices.contains(index) ? steps[index].outputVariable ?? "" : "" },
+                                                        set: { if steps.indices.contains(index) { steps[index].outputVariable = $0.isEmpty ? nil : $0 } }))
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(width: 120)
+                        Text(L("automation.outputHelp")).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .padding(.leading, 26)
+                }
             }
             Menu {
                 ActionPickerMenu(onPick: { steps.append(WorkflowStep(.action($0.defaultInvocation()))) }) {
@@ -451,6 +503,15 @@ struct StepListEditor: View {
                         Button(workflow.name) { steps.append(WorkflowStep(.runWorkflow(workflow.id))) }
                     }
                 }
+                Divider()
+                Button { steps.append(WorkflowStep(.setVariable(name: "name", value: "{{output}}"))) } label: { Label(L("automation.step.setVariable"), systemImage: "character.textbox") }
+                if depth < 3 {
+                    Button { steps.append(WorkflowStep(.repeatTimes(3, steps: []))) } label: { Label(L("automation.step.repeat"), systemImage: "repeat") }
+                }
+                Button { steps.append(WorkflowStep(.waitUntil(.appRunning(bundleID: ""), timeout: 30))) } label: { Label(L("automation.step.waitUntil"), systemImage: "hourglass.badge.plus") }
+                Button { steps.append(WorkflowStep(.askInput(prompt: "", variable: "input"))) } label: { Label(L("automation.step.askInput"), systemImage: "text.bubble") }
+                Button { steps.append(WorkflowStep(.showText("{{output}}"))) } label: { Label(L("automation.step.showText"), systemImage: "textformat.size.larger") }
+                Divider()
                 Button { steps.append(WorkflowStep(.stop)) } label: { Label(L("automation.step.stop"), systemImage: "stop.circle") }
             } label: { Label(L("automation.addStep"), systemImage: "plus") }
             .fixedSize()
@@ -485,6 +546,51 @@ private struct StepEditor: View {
             Label(L("automation.step.runNamed", runtime.config.automation.workflows.first { $0.id == id }?.name ?? "?"), systemImage: "arrow.turn.down.right")
         case .stop:
             Label(L("automation.step.stop"), systemImage: "stop.circle")
+        case .setVariable(let name, let value):
+            HStack {
+                Label(L("automation.step.setVariable"), systemImage: "character.textbox")
+                TextField(L("automation.variable"), text: Binding(get: { name }, set: { step.kind = .setVariable(name: $0, value: value) }))
+                    .font(.system(.callout, design: .monospaced)).frame(width: 110)
+                Text("=")
+                TextField(L("automation.value"), text: Binding(get: { value }, set: { step.kind = .setVariable(name: name, value: $0) }))
+                    .font(.system(.callout, design: .monospaced))
+            }
+        case .repeatTimes(let times, let inner):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(L("automation.step.repeat"), systemImage: "repeat").font(.callout.weight(.semibold))
+                    Stepper(L("automation.times", times), value: Binding(get: { times }, set: { step.kind = .repeatTimes(max(1, $0), steps: inner) }), in: 1...1000)
+                }
+                StepListEditor(steps: Binding(get: { inner }, set: { step.kind = .repeatTimes(times, steps: $0) }), runtime: runtime, depth: depth + 1)
+            }
+        case .waitUntil(let condition, let timeout):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(L("automation.step.waitUntil"), systemImage: "hourglass.badge.plus").font(.callout.weight(.semibold))
+                    Stepper(L("automation.timeoutSeconds", Int(timeout)), value: Binding(get: { timeout }, set: { step.kind = .waitUntil(condition, timeout: max(1, $0)) }), in: 1...3600, step: 5)
+                }
+                ConditionRow(condition: Binding(get: { condition }, set: { step.kind = .waitUntil($0, timeout: timeout) }), runtime: runtime)
+                Menu(L("automation.changeCondition")) {
+                    ForEach(Array(ConditionSpec.templates.enumerated()), id: \.offset) { _, template in
+                        Button(L(template.titleKey)) { step.kind = .waitUntil(template, timeout: timeout) }
+                    }
+                }
+                .fixedSize()
+            }
+        case .askInput(let prompt, let variable):
+            HStack {
+                Label(L("automation.step.askInput"), systemImage: "text.bubble")
+                TextField(L("automation.prompt"), text: Binding(get: { prompt }, set: { step.kind = .askInput(prompt: $0, variable: variable) }))
+                Text("→")
+                TextField(L("automation.variable"), text: Binding(get: { variable }, set: { step.kind = .askInput(prompt: prompt, variable: $0) }))
+                    .font(.system(.callout, design: .monospaced)).frame(width: 100)
+            }
+        case .showText(let text):
+            HStack {
+                Label(L("automation.step.showText"), systemImage: "textformat.size.larger")
+                TextField(L("automation.value"), text: Binding(get: { text }, set: { step.kind = .showText($0) }))
+                    .font(.system(.callout, design: .monospaced))
+            }
         }
     }
 }
@@ -540,4 +646,14 @@ private struct RunHistorySheet: View {
         }
         .frame(width: 560, height: 480)
     }
+}
+
+/// A binding to one array element that tolerates the element being removed
+/// while SwiftUI still renders its row (index bindings would crash).
+func safeElement<T>(_ array: Binding<[T]>, _ index: Int) -> Binding<T> {
+    let fallback = array.wrappedValue[index]
+    return Binding(
+        get: { array.wrappedValue.indices.contains(index) ? array.wrappedValue[index] : fallback },
+        set: { if array.wrappedValue.indices.contains(index) { array.wrappedValue[index] = $0 } }
+    )
 }

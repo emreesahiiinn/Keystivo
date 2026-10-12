@@ -185,7 +185,10 @@ public final class FolderRuleEngine {
     @ObservationIgnored public var onNotify: (@MainActor (String, String) -> Void)?
 
     @ObservationIgnored private var stream: FSEventStreamRef?
-    @ObservationIgnored private var processed: [String: Date] = [:]
+    /// rule|file ID → "signature␟path" when the rule last acted on the file (persisted),
+    /// so a rule acts on each file once, again only after it changes (like Hazel).
+    /// Keyed by file ID, so a renamed or moved file is still recognized.
+    @ObservationIgnored private var processed: [String: String] = UserDefaults.standard.dictionary(forKey: "FolderRules.processed") as? [String: String] ?? [:]
     @ObservationIgnored private let debouncer = Debouncer(delay: .seconds(1.5))
     @ObservationIgnored private var sweepTimer: Timer?
 
@@ -235,28 +238,62 @@ public final class FolderRuleEngine {
         for rule in rules where rule.isEnabled {
             run(rule)
         }
+        // Forget files that are gone or rules that were deleted.
+        let ruleIDs = Set(rules.map { "\($0.id)" })
+        processed = processed.filter { key, value in
+            let rule = key.split(separator: "|", maxSplits: 1).first.map(String.init) ?? ""
+            let path = value.split(separator: "\u{1F}", maxSplits: 1).last.map(String.init) ?? ""
+            return ruleIDs.contains(rule) && FileManager.default.fileExists(atPath: path)
+        }
+        UserDefaults.standard.set(processed, forKey: "FolderRules.processed")
+    }
+
+    /// Size and modification time: a different value means the file changed.
+    nonisolated static func signature(of url: URL) -> (id: String, signature: String, modified: Date)? {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .totalFileAllocatedSizeKey, .fileIdentifierKey]) else { return nil }
+        let modified = values.contentModificationDate ?? .distantPast
+        let id = values.fileIdentifier.map { String($0) } ?? url.path
+        return (id, "\(values.fileSize ?? values.totalFileAllocatedSize ?? 0)@\(modified.timeIntervalSince1970)", modified)
+    }
+
+    /// Partial downloads and files still being written are left alone until they settle.
+    nonisolated static func isStillBeingWritten(_ url: URL, modified: Date) -> Bool {
+        let partial: Set<String> = ["download", "crdownload", "part", "partial", "opdownload", "tmp"]
+        return partial.contains(url.pathExtension.lowercased()) || Date.now.timeIntervalSince(modified) < 3
     }
 
     public func run(_ rule: FolderRule, dryRun: Bool = false) -> [URL] {
         let folder = rule.folderURL
         guard let entries = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
         var matched: [URL] = []
+        var settling = false
         for url in entries {
             guard let facts = FileFacts.read(url), FolderRuleEvaluator.matches(rule, facts) else { continue }
-            let key = "\(rule.id)|\(url.path)"
-            if !dryRun, let last = processed[key], Date.now.timeIntervalSince(last) < 60 { continue }
+            let current = Self.signature(of: url)
+            let key = "\(rule.id)|\(current?.id ?? url.path)"
+            if !dryRun, let current {
+                if processed[key]?.split(separator: "\u{1F}").first.map(String.init) == current.signature { continue }
+                if Self.isStillBeingWritten(url, modified: current.modified) {
+                    settling = true
+                    continue
+                }
+            }
             matched.append(url)
             guard !dryRun else { continue }
-            processed[key] = .now
-            apply(rule, to: url, facts: facts)
+            let final = apply(rule, to: url, facts: facts)
+            if let current { processed[key] = current.signature + "\u{1F}" + final.path }
         }
+        // Look again once files that were still being written have settled.
+        if settling { debouncer.schedule { [weak self] in self?.runAll() } }
         return matched
     }
 
     @discardableResult
     private func run(_ rule: FolderRule) -> [URL] { run(rule, dryRun: false) }
 
-    private func apply(_ rule: FolderRule, to original: URL, facts: FileFacts) {
+    /// Runs the rule's actions; returns where the file ended up.
+    @discardableResult
+    private func apply(_ rule: FolderRule, to original: URL, facts: FileFacts) -> URL {
         var url = original
         var summaries: [String] = []
         var succeeded = true
@@ -310,6 +347,7 @@ public final class FolderRuleEngine {
         }
         history.insert(RuleRunRecord(date: .now, ruleName: rule.name, fileName: original.lastPathComponent, summary: summaries.joined(separator: " "), succeeded: succeeded), at: 0)
         if history.count > 200 { history.removeLast(history.count - 200) }
+        return url
     }
 
     nonisolated static func unique(_ url: URL) -> URL {

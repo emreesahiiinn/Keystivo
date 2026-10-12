@@ -35,6 +35,16 @@ final class LauncherController {
     }
 
     func show(mode: LauncherMode) {
+        // Text actions in apps that don't expose their selection (Electron, terminals,
+        // web views): copy it while that app still has keyboard focus, then open.
+        if mode == .textActions, !isVisible, !LauncherModel.hasAXSelection {
+            Task {
+                model.prefetchedSelection = await LauncherModel.copySelection()
+                model.open(mode: mode)
+                present()
+            }
+            return
+        }
         model.open(mode: mode)
         present()
     }
@@ -108,7 +118,7 @@ final class LauncherController {
         // Never steal keys while an input method (Chinese, Japanese, Korean) is composing.
         if let textView = panel?.firstResponder as? NSTextView, textView.hasMarkedText() { return false }
         let modifiers = KeyModifiers(event.modifierFlags).subtracting(.function)
-        let code = event.keyCode
+        let code = Self.layoutIndependentKeyCode(event, modifiers: modifiers)
         if model.isConfirmingClear {
             switch (code, modifiers) {
             case (KeyCodes.escape, []): model.cancelClearClipboard()
@@ -154,10 +164,20 @@ final class LauncherController {
             }
             return true
         }
-        if !modifiers.isEmpty, let combo = KeyCombo(event: event), model.performShortcut(KeyCombo(keyCode: combo.keyCode, modifiers: modifiers)) {
+        if !modifiers.isEmpty, model.performShortcut(KeyCombo(keyCode: code, modifiers: modifiers)) {
             return true
         }
         return false
+    }
+
+    /// Letter shortcuts follow the keyboard layout: ⌘K is the key labeled K on
+    /// Turkish-F, AZERTY or Dvorak. Non-Latin layouts keep the physical key, as macOS does.
+    static func layoutIndependentKeyCode(_ event: NSEvent, modifiers: KeyModifiers) -> UInt16 {
+        guard !modifiers.intersection([.command, .control]).isEmpty,
+              let characters = event.charactersIgnoringModifiers?.lowercased(), characters.count == 1,
+              let character = characters.first, character.isASCII else { return event.keyCode }
+        if let letter = KeyCodes.letterKeyCodes[character] { return letter }
+        return character == "," ? 43 : event.keyCode
     }
 
     #if DEBUG

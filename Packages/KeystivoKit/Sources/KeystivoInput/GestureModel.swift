@@ -109,6 +109,14 @@ nonisolated public enum GestureTrigger: Codable, Hashable, Sendable {
         case .mouse(let gesture): "🖱 " + gesture.displayString
         }
     }
+
+    /// Mouse gestures all use the one gesture button, so only their strokes count.
+    public func matches(_ other: GestureTrigger) -> Bool {
+        switch (self, other) {
+        case (.mouse(let lhs), .mouse(let rhs)): lhs.strokes == rhs.strokes
+        default: self == other
+        }
+    }
 }
 
 /// Gesture → action chain, optionally limited to some apps ("uygulamaya özel gesture profilleri").
@@ -136,7 +144,7 @@ nonisolated public struct GestureBinding: Codable, Hashable, Sendable, Identifia
 nonisolated public enum GestureResolver {
     public static func resolve(_ trigger: GestureTrigger, in bindings: [GestureBinding], frontmostBundleID: String?, profileID: UUID?) -> GestureBinding? {
         let candidates = bindings.filter { binding in
-            binding.isEnabled && binding.trigger == trigger
+            binding.isEnabled && binding.trigger.matches(trigger)
                 && (binding.profileIDs.isEmpty || profileID.map(binding.profileIDs.contains) == true)
         }
         if let bundleID = frontmostBundleID,
