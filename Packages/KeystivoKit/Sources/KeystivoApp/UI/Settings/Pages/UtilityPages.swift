@@ -160,23 +160,99 @@ struct MenuBarPage: View {
             } footer: {
                 Text(L("menuBarSettings.hidingFooter")).font(.caption).foregroundStyle(.secondary)
             }
-            Section(L("menuBarSettings.monitor")) {
+            Section {
                 Toggle(L("menuBarSettings.showMonitor"), isOn: $runtime.config.menuBar.showsMonitor)
-                HStack {
-                    ForEach(MonitorMetric.allCases, id: \.self) { metric in
-                        Toggle(L(metric.titleKey), isOn: Binding(
-                            get: { runtime.config.menuBar.monitorMetrics.contains(metric) },
-                            set: { on in
-                                if on { runtime.config.menuBar.monitorMetrics.append(metric) } else { runtime.config.menuBar.monitorMetrics.removeAll { $0 == metric } }
-                            }
-                        ))
-                        .toggleStyle(.checkbox)
-                    }
+                ForEach(MonitorMetric.allCases, id: \.self) { metric in
+                    MonitorWidgetRow(runtime: runtime, metric: metric)
                 }
-                SystemMonitorDetailView()
+                .disabled(!runtime.config.menuBar.showsMonitor)
+            } header: {
+                Text(L("menuBarSettings.monitor"))
+            } footer: {
+                Text(L("menuBarSettings.monitorFooter")).font(.caption).foregroundStyle(.secondary)
             }
+            Section { SystemMonitorDetailView() }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// One metric of the menu bar monitor: on/off, live preview, style and color (Stats-style widgets).
+private struct MonitorWidgetRow: View {
+    @Bindable var runtime: KeystivoRuntime
+    let metric: MonitorMetric
+
+    private var settings: Binding<MonitorWidgetSettings> {
+        Binding(
+            get: { runtime.config.menuBar.widget(for: metric) },
+            set: { runtime.config.menuBar.monitorWidgets[metric.rawValue] = $0 }
+        )
+    }
+
+    private var isOn: Binding<Bool> {
+        Binding(
+            get: { runtime.config.menuBar.monitorMetrics.contains(metric) },
+            set: { on in
+                if on { runtime.config.menuBar.monitorMetrics.append(metric) } else { runtime.config.menuBar.monitorMetrics.removeAll { $0 == metric } }
+            }
+        )
+    }
+
+    var body: some View {
+        let monitor = SystemMonitor.shared
+        let reading = MonitorReading.make(metric, snapshot: monitor.snapshot, monitor: monitor, diskValue: runtime.config.menuBar.diskValue)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Toggle(L(metric.titleKey), isOn: isOn).toggleStyle(.checkbox)
+                Spacer()
+                // What it looks like in the menu bar right now.
+                MonitorWidget(reading: reading, settings: settings.wrappedValue)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.07)))
+            }
+            if isOn.wrappedValue {
+                HStack(spacing: 6) {
+                    Text(L("monitor.styleLabel")).foregroundStyle(.secondary)
+                    Picker("", selection: settings.style) {
+                        ForEach(MonitorWidgetStyle.available(for: metric), id: \.self) { Text(L($0.titleKey)).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    Text(L("monitor.colorLabel")).foregroundStyle(.secondary).padding(.leading, 8)
+                    Picker("", selection: settings.color) {
+                        ForEach(MonitorColorMode.allCases, id: \.self) { Text(L($0.titleKey)).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    if settings.wrappedValue.style == .compact {
+                        Toggle(L("monitor.showIcon"), isOn: settings.showsIcon).toggleStyle(.checkbox).padding(.leading, 8)
+                    } else if [.mini, .lineChart, .barChart, .pie, .gauge].contains(settings.wrappedValue.style) {
+                        Toggle(settings.wrappedValue.style == .pie || settings.wrappedValue.style == .gauge ? L("monitor.showValue") : L("monitor.showLabel"),
+                               isOn: settings.showsLabel).toggleStyle(.checkbox).padding(.leading, 8)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .controlSize(.small)
+                .padding(.leading, 20)
+                if metric == .disk {
+                    HStack(spacing: 6) {
+                        Text(L("monitor.diskShows")).foregroundStyle(.secondary)
+                        Picker("", selection: $runtime.config.menuBar.diskValue) {
+                            ForEach(DiskValueMode.allCases, id: \.self) { Text(L($0.titleKey)).tag($0) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        Spacer(minLength: 0)
+                    }
+                    .controlSize(.small)
+                    .padding(.leading, 20)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+        .onAppear { if metric.usesHardware { SystemMonitor.shared.samplesHardware = true } }
     }
 }
 

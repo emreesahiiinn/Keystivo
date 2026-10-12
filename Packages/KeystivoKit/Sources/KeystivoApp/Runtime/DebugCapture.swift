@@ -2,7 +2,9 @@
 import AppKit
 import KeystivoAccessibility
 import KeystivoCore
+import KeystivoTools
 import KeystivoWindows
+import SwiftUI
 @preconcurrency import ScreenCaptureKit
 
 /// Developer aid: captures another app's largest on-screen window to a PNG.
@@ -232,6 +234,32 @@ enum ModifierDragSelfTest {
         element.setFrame(original)
         CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: originalPoint, mouseButton: .left)?.post(tap: .cghidEventTap)
         log.append("Restored: \(element.frame ?? .zero)")
+    }
+}
+/// Every widget style of every metric, for visual checks.
+struct MonitorStyleGallery: View {
+    var body: some View {
+        let monitor = SystemMonitor.shared
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(MonitorMetric.allCases, id: \.self) { metric in
+                HStack(spacing: 14) {
+                    Text(metric.rawValue).font(.caption).frame(width: 60, alignment: .leading)
+                    ForEach(MonitorWidgetStyle.available(for: metric), id: \.self) { style in
+                        VStack(spacing: 2) {
+                            MonitorWidget(reading: .make(metric, snapshot: monitor.snapshot, monitor: monitor, diskValue: metric == .disk ? .usedPercent : .freeSpace),
+                                          settings: MonitorWidgetSettings(style: style, color: style == .compact ? .monochrome : .utilization))
+                                .fixedSize()
+                                .frame(height: 22)
+                                .padding(.horizontal, 6)
+                                .background(Color.primary.opacity(0.06))
+                            Text(style.rawValue).font(.system(size: 8)).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 #endif

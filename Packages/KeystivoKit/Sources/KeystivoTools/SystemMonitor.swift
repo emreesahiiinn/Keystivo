@@ -11,6 +11,8 @@ nonisolated public struct SystemSnapshot: Sendable, Equatable {
     public var memoryUsed: UInt64 = 0
     public var memoryTotal: UInt64 = ProcessInfo.processInfo.physicalMemory
     public var memoryPressure: Double { memoryTotal == 0 ? 0 : Double(memoryUsed) / Double(memoryTotal) }
+    /// Share of the startup disk in use (0…1).
+    public var diskUsedFraction: Double { diskTotal > 0 ? Double(max(diskTotal - diskFree, 0)) / Double(diskTotal) : 0 }
     public var networkDown: Double = 0
     public var networkUp: Double = 0
     public var diskFree: Int64 = 0
@@ -63,6 +65,7 @@ public final class SystemMonitor {
     /// Read GPU, temperatures, fans and power too (set while such a metric is shown).
     @ObservationIgnored public var samplesHardware = false
     public private(set) var gpuHistory: [Double] = []
+    public private(set) var memoryHistory: [Double] = []
     public private(set) var temperatureHistory: [Double] = []
     public var interval: TimeInterval = 2
 
@@ -214,6 +217,7 @@ public final class SystemMonitor {
         if !processConsumers.isEmpty { sampleProcesses() }
         if !networkConsumers.isEmpty { sampleNetwork() }
         cpuHistory = Array((cpuHistory + [next.cpuUsage]).suffix(40))
+        memoryHistory = Array((memoryHistory + [next.memoryPressure]).suffix(40))
         networkHistory = Array((networkHistory + [next.networkDown]).suffix(40))
         uploadHistory = Array((uploadHistory + [next.networkUp]).suffix(40))
     }

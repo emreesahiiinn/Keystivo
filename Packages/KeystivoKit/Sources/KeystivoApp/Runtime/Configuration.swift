@@ -204,6 +204,74 @@ nonisolated struct MenuBarSettings: Codable, Hashable, Sendable {
     var autoCollapseSeconds = 10
     var showsMonitor = false
     var monitorMetrics: [MonitorMetric] = [.cpu, .memory, .network]
+    /// Per-metric look (Stats-style widgets), keyed by metric.
+    var monitorWidgets: [String: MonitorWidgetSettings] = [:]
+    /// What the disk metric shows.
+    var diskValue: DiskValueMode = .freeSpace
+
+    func widget(for metric: MonitorMetric) -> MonitorWidgetSettings {
+        monitorWidgets[metric.rawValue] ?? .default(for: metric)
+    }
+}
+
+/// How one menu bar metric is drawn.
+nonisolated struct MonitorWidgetSettings: Codable, Hashable, Sendable {
+    var style: MonitorWidgetStyle
+    var color: MonitorColorMode = .monochrome
+    /// Small caption ("CPU", "RAM"…) on mini, chart and gauge styles.
+    var showsLabel = true
+    /// Symbol before the value on the compact style.
+    var showsIcon = true
+
+    static func `default`(for metric: MonitorMetric) -> MonitorWidgetSettings {
+        MonitorWidgetSettings(style: metric == .network ? .twoLine : .compact)
+    }
+}
+
+nonisolated enum MonitorWidgetStyle: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Symbol and value.
+    case compact
+    /// Tiny caption above the value.
+    case mini
+    case lineChart
+    /// Per-core bars for CPU, one level bar otherwise.
+    case barChart
+    case pie
+    /// Needle gauge.
+    case gauge
+    /// Two values stacked: used/total, upload/download, temperature/fan.
+    case twoLine
+    /// The value alone.
+    case text
+
+    var titleKey: String { "monitor.style.\(rawValue)" }
+
+    static func available(for metric: MonitorMetric) -> [MonitorWidgetStyle] {
+        switch metric {
+        case .cpu, .gpu: [.compact, .mini, .lineChart, .barChart, .pie, .gauge, .text]
+        case .memory: [.compact, .mini, .lineChart, .barChart, .pie, .gauge, .twoLine, .text]
+        // Disk use changes too slowly for a line chart.
+        case .disk: [.compact, .mini, .barChart, .pie, .gauge, .twoLine, .text]
+        case .network: [.twoLine, .lineChart, .compact, .text]
+        case .sensors: [.compact, .mini, .lineChart, .gauge, .twoLine, .text]
+        }
+    }
+}
+
+nonisolated enum MonitorColorMode: String, Codable, Hashable, Sendable, CaseIterable {
+    /// Follows the menu bar's text color.
+    case monochrome
+    /// Green, then orange, then red as the value rises.
+    case utilization
+    case accent
+    case blue, green, orange, red, purple, pink, teal
+
+    var titleKey: String { "monitor.color.\(rawValue)" }
+}
+
+nonisolated enum DiskValueMode: String, Codable, Hashable, Sendable, CaseIterable {
+    case freeSpace, usedPercent, freePercent, usedSpace
+    var titleKey: String { "monitor.disk.\(rawValue)" }
 }
 
 nonisolated struct ToolsSettings: Codable, Hashable, Sendable {

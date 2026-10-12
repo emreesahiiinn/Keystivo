@@ -152,6 +152,20 @@ public final class KeystivoRuntime {
         if let path = UserDefaults.standard.string(forKey: "KSAnnotateImage"), let image = NSImage(contentsOfFile: path) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.annotationEditor.open(image) }
         }
+        // `-KSMonitorStyleGallery YES`: every menu bar widget style with live data, light and dark.
+        if UserDefaults.standard.bool(forKey: "KSMonitorStyleGallery") {
+            SystemMonitor.shared.samplesHardware = true
+            SystemMonitor.shared.acquire("gallery")
+            for (index, scheme) in [ColorScheme.light, .dark].enumerated() {
+                let window = NSWindow(contentRect: CGRect(x: 60 + index * 40, y: 60 + index * 40, width: 900, height: 560), styleMask: [.titled], backing: .buffered, defer: false)
+                window.title = "Widget Gallery \(index)"
+                window.contentView = NSHostingView(rootView: MonitorStyleGallery().environment(\.colorScheme, scheme)
+                    .background(scheme == .dark ? Color.black : Color.white))
+                window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                window.orderFrontRegardless()
+                debugWindows.append(window)
+            }
+        }
         // `-KSShowLauncherMode root|emoji|menuItems|processes -KSLauncherQuery text` (inert: actions do nothing).
         if let raw = UserDefaults.standard.string(forKey: "KSShowLauncherMode") {
             let mode: LauncherMode = switch raw {

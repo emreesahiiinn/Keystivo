@@ -233,47 +233,15 @@ private struct MonitorSegmentView: View {
     let onWidthChange: () -> Void
 
     var body: some View {
-        let snapshot = SystemMonitor.shared.snapshot
-        content(snapshot)
+        // Reading the settings here keeps the widget live while they're edited.
+        let menuBar = KeystivoRuntime.shared.config.menuBar
+        let monitor = SystemMonitor.shared
+        MonitorWidget(reading: .make(metric, snapshot: monitor.snapshot, monitor: monitor, diskValue: menuBar.diskValue),
+                      settings: menuBar.widget(for: metric))
             .fixedSize()
             .frame(maxHeight: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in onWidthChange() }
     }
-
-    @ViewBuilder
-    private func content(_ snapshot: SystemSnapshot) -> some View {
-        switch metric {
-        case .cpu: compact("cpu", "\(Int(snapshot.cpuUsage * 100))%", width: 27)
-        case .memory: compact("memorychip", "\(Int(snapshot.memoryPressure * 100))%", width: 27)
-        case .network:
-            VStack(alignment: .trailing, spacing: -1) {
-                Text("↑ " + SystemMonitor.compactRate(snapshot.networkUp)).lineLimit(1)
-                Text("↓ " + SystemMonitor.compactRate(snapshot.networkDown)).lineLimit(1)
-            }
-            .font(.system(size: 8.5, weight: .medium).monospacedDigit())
-            .fixedSize()
-            // Wide enough for the widest possible value, so it never wraps or jitters.
-            .frame(width: Self.networkWidth, alignment: .trailing)
-        case .disk: compact("internaldrive", ByteCountFormatter.string(fromByteCount: snapshot.diskFree, countStyle: .file), width: nil)
-        case .gpu: compact("square.stack.3d.up", snapshot.gpuUsage.map { "\(Int($0 * 100))%" } ?? "—", width: 27)
-        case .sensors: compact("thermometer.medium", snapshot.cpuTemperature.map { "\(Int($0.rounded()))°" } ?? "—", width: 24)
-        }
-    }
-
-    private func compact(_ symbol: String, _ value: String, width: CGFloat?) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol).font(.system(size: 10))
-            Text(value)
-                .font(.system(size: 11, weight: .medium).monospacedDigit())
-                .frame(minWidth: width, alignment: .trailing)
-        }
-    }
-
-    static let networkWidth: CGFloat = {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .medium)
-        let widest = ["↓ 999 B", "↓ 999 K", "↓ 9.9 M", "↓ 999 M", "↓ 9.9 G"].map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 40
-        return ceil(widest) + 1
-    }()
 }
 
 /// Temperatures, hottest first (grouped names shortened).
