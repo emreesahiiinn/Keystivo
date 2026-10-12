@@ -107,7 +107,7 @@ private struct QuicklinkList: View {
                         .font(.system(.callout, design: .monospaced))
                         .foregroundStyle(link.resolvedURL(query: "test") == nil ? Color.red : Color.primary)
                     Button(role: .destructive) {
-                        links.removeAll { $0.id == link.id }
+                        endEditing(); links.removeAll { $0.id == link.id }
                     } label: {
                         Image(systemName: "minus.circle.fill")
                     }
@@ -237,8 +237,10 @@ struct SnippetsPage: View {
                         selection = snippet.id
                     } label: { Image(systemName: "plus") }
                     Button {
-                        runtime.config.snippets.snippets.removeAll { $0.id == selection }
+                        endEditing()
+                        let removed = selection
                         selection = nil
+                        runtime.config.snippets.snippets.removeAll { $0.id == removed }
                     } label: { Image(systemName: "minus") }
                     .disabled(selection == nil)
                     Button { importSnippets() } label: { Image(systemName: "square.and.arrow.down") }
@@ -254,8 +256,8 @@ struct SnippetsPage: View {
             .frame(minWidth: 220, maxWidth: 300)
 
             Group {
-                if let index = runtime.config.snippets.snippets.firstIndex(where: { $0.id == selection }) {
-                    SnippetEditor(snippet: $runtime.config.snippets.snippets[index], allKeywords: runtime.config.snippets.snippets.map(\.keyword))
+                if let snippet = runtime.config.snippets.snippets.first(where: { $0.id == selection }) {
+                    SnippetEditor(snippet: safeElement($runtime.config.snippets.snippets, id: snippet.id, fallback: snippet), allKeywords: runtime.config.snippets.snippets.map(\.keyword))
                 } else {
                     Form {
                         PageHeader(symbol: "text.badge.plus", color: .teal, titleKey: "settings.page.snippets", subtitleKey: "snippetsSettings.subtitle")

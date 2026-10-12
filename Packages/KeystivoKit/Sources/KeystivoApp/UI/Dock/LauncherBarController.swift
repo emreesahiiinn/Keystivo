@@ -28,7 +28,9 @@ final class LauncherBarModel {
         if settings.showsRunningApps {
             for id in runningBundleIDs where !result.contains(id) { result.append(id) }
         }
-        return result
+        // Each app once, even if a settings file lists it twice (layouts trap on duplicate ids).
+        var seen = Set<String>()
+        return result.filter { seen.insert($0).inserted }
     }
 
     var isVertical: Bool { settings.edge == .left || settings.edge == .right }

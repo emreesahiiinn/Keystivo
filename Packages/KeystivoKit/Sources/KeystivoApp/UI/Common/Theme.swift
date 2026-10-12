@@ -40,6 +40,14 @@ enum Theme {
     }
 
     static let colorNames = ["blue", "indigo", "purple", "pink", "red", "orange", "yellow", "green", "mint", "teal", "cyan", "brown", "gray"]
+
+    #if DEBUG
+    /// Marketing renders draw their own glass behind panels (system materials
+    /// don't render offscreen), so panels leave their background out.
+    nonisolated(unsafe) static var isShowcase = false
+    #else
+    static let isShowcase = false
+    #endif
 }
 
 /// NSVisualEffectView bridge, used before macOS 26 (no Liquid Glass).
@@ -66,7 +74,9 @@ extension View {
     @ViewBuilder
     func keystivoPanelBackground(cornerRadius: CGFloat = Theme.panelCornerRadius, material: NSVisualEffectView.Material = .hudWindow) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(macOS 26, *) {
+        if Theme.isShowcase {
+            self
+        } else if #available(macOS 26, *) {
             self.glassEffect(.regular, in: shape)
         } else {
             self

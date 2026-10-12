@@ -167,7 +167,7 @@ public final class SnippetExpander: EventTapHandler {
         var chars = [UniChar](repeating: 0, count: 8)
         event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
         guard length > 0 else { return .pass }
-        buffer += String(utf16CodeUnits: chars, count: length)
+        buffer += String(utf16CodeUnits: chars, count: min(length, chars.count))
         if buffer.count > max(maxKeywordLength, 1) * 2 { buffer = String(buffer.suffix(maxKeywordLength)) }
 
         // The keystroke completing a keyword passes through; we then erase the keyword.

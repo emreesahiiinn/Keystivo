@@ -53,7 +53,7 @@ struct MixerView: View {
                 .help(L("action.audio.toggleMute"))
                 Slider(value: Binding(get: { Double(devices.outputVolume) }, set: { devices.setOutputVolume(Float($0)) }), in: 0...1)
                     .controlSize(.small)
-                Text("\(Int((devices.outputMuted ? 0 : devices.outputVolume) * 100))%")
+                Text("\(((devices.outputMuted ? 0 : devices.outputVolume) * 100).safeInt)%")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: 36, alignment: .trailing)
@@ -161,7 +161,7 @@ private struct AppMixerRow: View {
                 HStack {
                     Text(entry.name).font(.caption).lineLimit(1)
                     Spacer()
-                    Text(setting.muted ? L("mixer.muted") : "\(Int(setting.volume * 100))%")
+                    Text(setting.muted ? L("mixer.muted") : "\((setting.volume * 100).safeInt)%")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }

@@ -37,6 +37,18 @@ struct CalculatorTests {
     }
 }
 
+@Suite("Calculator limits")
+struct CalculatorLimitTests {
+    /// Thousands of nested parentheses used to recurse until the stack ran out.
+    @Test func deepNestingIsRejected() throws {
+        let input = String(repeating: "(", count: 5000) + "1" + String(repeating: ")", count: 5000)
+        #expect(throws: (any Error).self) { try Calculator.evaluate(input) }
+        let minuses = String(repeating: "-", count: 5000) + "1"
+        #expect(throws: (any Error).self) { try Calculator.evaluate(minuses) }
+        #expect(try Calculator.evaluate("((1+2)*3)") == 9)
+    }
+}
+
 @Suite("Unit conversion")
 struct UnitConverterTests {
     @Test func lengths() throws {

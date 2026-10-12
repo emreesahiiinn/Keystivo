@@ -73,7 +73,9 @@ final class HintsController: EventTapHandler {
             runtime.hud.show(symbol: "rectangle.dashed", text: L(mode == .scroll ? "hints.noScrollAreas" : "hints.noElements"), style: .warning)
             return
         }
-        let labels = HintLabelGenerator.labels(count: elements.count, alphabet: settings.alphabet)
+        var labels = HintLabelGenerator.labels(count: elements.count, alphabet: settings.alphabet)
+        // An alphabet with fewer than two letters (digits, empty) can't label anything.
+        if labels.count < elements.count { labels = HintLabelGenerator.labels(count: elements.count) }
         var matcher = HintMatcher(labels: labels, titles: elements.map(\.title))
         if mode == .search { matcher.setMode(.search) }
         self.matcher = matcher
@@ -86,7 +88,8 @@ final class HintsController: EventTapHandler {
         model.style = settings.hintStyle
         model.fontSize = settings.hintSize
         model.isSearching = mode == .search
-        update(matcher.evaluate())
+        update(matcher.evaluate(), &matcher)
+        self.matcher = matcher
 
         if mode == .scroll, elements.count == 1 { selectScrollArea(0) }
         showOverlays()
@@ -101,6 +104,12 @@ final class HintsController: EventTapHandler {
         overlays.forEach { $0.orderOut(nil) }
         overlays.removeAll()
         model.elements = []
+        model.labels = []
+        model.visible = []
+        model.searchResults = []
+        model.isSearching = false
+        model.scrollSelection = nil
+        model.typed = ""
         EventTapManager.shared.refresh()
     }
 
@@ -116,8 +125,8 @@ final class HintsController: EventTapHandler {
         }
     }
 
-    private func update(_ outcome: HintMatcher.Outcome) {
-        guard let matcher else { return }
+    /// Shows the outcome of the latest key; a wrong letter resets `matcher`.
+    private func update(_ outcome: HintMatcher.Outcome, _ matcher: inout HintMatcher) {
         model.typed = matcher.typed
         model.isSearching = matcher.mode == .search
         switch outcome {
@@ -131,11 +140,9 @@ final class HintsController: EventTapHandler {
             model.shakeToken += 1
             if matcher.mode == .labels {
                 // Wrong letter: start over instead of leaving the user stuck.
-                var reset = matcher
-                while !reset.typed.isEmpty { _ = reset.backspace() }
-                self.matcher = reset
+                while !matcher.typed.isEmpty { _ = matcher.backspace() }
                 model.typed = ""
-                model.visible = Set(model.elements.indices)
+                model.visible = Set(model.labels.indices)
             } else {
                 model.searchResults = []
                 model.visible = []
@@ -192,10 +199,10 @@ final class HintsController: EventTapHandler {
         }
         switch keyCode {
         case kVK_Delete:
-            update(matcher.backspace())
+            update(matcher.backspace(), &matcher)
         case kVK_Tab where mode != .scroll:
             matcher.setMode(matcher.mode == .labels ? .search : .labels)
-            update(matcher.evaluate())
+            update(matcher.evaluate(), &matcher)
         case kVK_Return, kVK_ANSI_KeypadEnter:
             if case .matched(let index) = matcher.confirm() {
                 self.matcher = matcher
@@ -203,9 +210,9 @@ final class HintsController: EventTapHandler {
                 return .consume
             }
         case kVK_DownArrow where matcher.mode == .search:
-            update(matcher.moveSelection(by: 1))
+            update(matcher.moveSelection(by: 1), &matcher)
         case kVK_UpArrow where matcher.mode == .search:
-            update(matcher.moveSelection(by: -1))
+            update(matcher.moveSelection(by: -1), &matcher)
         case kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow, kVK_Home, kVK_End, kVK_PageUp, kVK_PageDown, kVK_ForwardDelete:
             break
         default:
@@ -223,7 +230,7 @@ final class HintsController: EventTapHandler {
             guard let character = typed.lowercased().first, HintMatcher.isTypable(character) else { return .consume }
             if character == "/" && matcher.mode == .labels {
                 matcher.setMode(.search)
-                update(matcher.evaluate())
+                update(matcher.evaluate(), &matcher)
                 break
             }
             guard matcher.mode == .search || character.isLetter else { return .consume }
@@ -233,15 +240,16 @@ final class HintsController: EventTapHandler {
                 activate(index: index, modifiers: modifiers)
                 return .consume
             }
-            update(outcome)
+            update(outcome, &matcher)
         }
         self.matcher = matcher
         return .consume
     }
 
     private func handleScrollKey(_ keyCode: Int, modifiers: KeyModifiers, area: Int) {
+        guard model.elements.indices.contains(area) else { return }
         let element = model.elements[area]
-        let step = Int32(runtime.config.navigation.scrollStep)
+        let step = Int32(clamping: runtime.config.navigation.scrollStep.safeInt)
         switch keyCode {
         case kVK_ANSI_J, kVK_DownArrow: ScrollActuator.scroll(.down, in: element, step: step)
         case kVK_ANSI_K, kVK_UpArrow: ScrollActuator.scroll(.up, in: element, step: step)

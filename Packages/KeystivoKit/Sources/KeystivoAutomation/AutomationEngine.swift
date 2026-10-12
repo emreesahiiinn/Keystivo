@@ -150,7 +150,8 @@ public final class AutomationEngine {
                         if let name = step.outputVariable?.trimmingCharacters(in: .whitespaces), !name.isEmpty { state.variables[name] = output }
                     }
                 case .delay(let seconds):
-                    try await Task.sleep(for: .milliseconds(Int(max(seconds, 0) * 1000)))
+                    // Imported workflows can carry any number: keep it finite and at most a day.
+                    try await Task.sleep(for: .milliseconds((min(max(seconds.finite(or: 0), 0), 86_400) * 1000).safeInt))
                 case .condition(let condition, let thenSteps, let elseSteps):
                     try await execute(evaluate(condition, state: state) ? thenSteps : elseSteps, workflow: workflow, depth: depth + 1, state: state)
                 case .runWorkflow(let id):
@@ -267,7 +268,7 @@ final class AutomationScheduler {
         if hasSchedules { onEvent?(.scheduleTick(now)) }
         for minutes in intervals {
             let last = lastIntervalFire[minutes] ?? .distantPast
-            if now.timeIntervalSince(last) >= TimeInterval(minutes * 60) - 5 {
+            if now.timeIntervalSince(last) >= TimeInterval(minutes) * 60 - 5 {
                 if lastIntervalFire[minutes] != nil { onEvent?(.interval(minutes: minutes)) }
                 lastIntervalFire[minutes] = now
             }

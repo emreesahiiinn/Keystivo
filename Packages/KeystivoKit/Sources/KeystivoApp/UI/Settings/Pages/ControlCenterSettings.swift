@@ -58,7 +58,7 @@ private struct ModuleOrderEditor: View {
 
     var body: some View {
         let hidden = ControlCenterModule.allCases.filter { !modules.contains($0) }
-        ForEach(Array(modules.enumerated()), id: \.element) { index, module in
+        ForEach(Array(modules.enumerated()), id: \.offset) { index, module in
             row(module, shown: true) {
                 Button { move(index, by: -1) } label: { Image(systemName: "chevron.up") }
                     .disabled(index == 0)
@@ -123,7 +123,7 @@ struct ActionIDListEditor: View {
     @Binding var actions: [String]
 
     var body: some View {
-        ForEach(Array(actions.enumerated()), id: \.element) { index, id in
+        ForEach(Array(actions.enumerated()), id: \.offset) { index, id in
             let descriptor = ActionRegistry.shared.descriptors[id]
             HStack(spacing: 10) {
                 Image(systemName: descriptor?.symbolName ?? "questionmark").frame(width: 18).foregroundStyle(.secondary)
@@ -136,7 +136,7 @@ struct ActionIDListEditor: View {
                     Button { move(index, by: 1) } label: { Image(systemName: "chevron.down") }
                         .disabled(index == actions.count - 1)
                         .help(L("cc.settings.moveDown"))
-                    Button { actions.remove(at: index) } label: { Image(systemName: "minus.circle") }
+                    Button { actions.removeIfPresent(at: index) } label: { Image(systemName: "minus.circle") }
                         .help(L("common.remove"))
                 }
                 .buttonStyle(.borderless)

@@ -135,7 +135,7 @@ public nonisolated final class SQLiteDatabase {
 
     /// `user_version`-based schema migrations.
     public func migrate(_ migrations: [String]) throws {
-        let current = Int(try scalarInt("PRAGMA user_version;"))
+        let current = max(0, Int(try scalarInt("PRAGMA user_version;")))
         guard current < migrations.count else { return }
         try transaction {
             for index in current..<migrations.count {

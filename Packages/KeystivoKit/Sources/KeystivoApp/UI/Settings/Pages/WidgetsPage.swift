@@ -32,8 +32,8 @@ struct WidgetsPage: View {
                 if runtime.config.widgets.instances.isEmpty {
                     Text(L("widgets.none")).foregroundStyle(.secondary)
                 }
-                ForEach($runtime.config.widgets.instances) { $instance in
-                    WidgetInstanceRow(runtime: runtime, instance: $instance)
+                ForEach(runtime.config.widgets.instances) { instance in
+                    WidgetInstanceRow(runtime: runtime, instance: safeElement($runtime.config.widgets.instances, id: instance.id, fallback: instance))
                 }
             }
             Section(L("widgets.gallery")) {
@@ -162,14 +162,14 @@ private struct TimeZoneListEditor: View {
     }()
 
     var body: some View {
-        ForEach(Array(zones.enumerated()), id: \.element) { index, identifier in
+        ForEach(Array(zones.enumerated()), id: \.offset) { index, identifier in
             HStack {
                 Text(identifier.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") } ?? identifier)
                 Text(identifier).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button { if index > 0 { zones.swapAt(index, index - 1) } } label: { Image(systemName: "chevron.up") }
+                Button { if index > 0, zones.indices.contains(index) { zones.swapAt(index, index - 1) } } label: { Image(systemName: "chevron.up") }
                     .disabled(index == 0)
-                Button { zones.remove(at: index) } label: { Image(systemName: "minus.circle") }
+                Button { zones.removeIfPresent(at: index) } label: { Image(systemName: "minus.circle") }
                     .help(L("common.remove"))
             }
             .buttonStyle(.borderless)

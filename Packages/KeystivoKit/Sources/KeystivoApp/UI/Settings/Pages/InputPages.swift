@@ -39,14 +39,14 @@ struct NavigationPage: View {
                     ForEach(HintStyle.allCases, id: \.self) { Text(L($0.titleKey)).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                LabeledContent(L("navigationSettings.size", Int(runtime.config.navigation.hintSize))) {
+                LabeledContent(L("navigationSettings.size", runtime.config.navigation.hintSize.safeInt)) {
                     Slider(value: $runtime.config.navigation.hintSize, in: 9...20, step: 1).frame(width: 220)
                 }
                 Toggle(L("navigationSettings.menuBar"), isOn: $runtime.config.navigation.includesMenuBar)
                 Toggle(L("navigationSettings.dock"), isOn: $runtime.config.navigation.includesDock)
             }
             Section(L("navigationSettings.scrolling")) {
-                LabeledContent(L("navigationSettings.scrollStep", Int(runtime.config.navigation.scrollStep))) {
+                LabeledContent(L("navigationSettings.scrollStep", runtime.config.navigation.scrollStep.safeInt)) {
                     Slider(value: $runtime.config.navigation.scrollStep, in: 20...200, step: 10).frame(width: 220)
                 }
             }
@@ -109,7 +109,7 @@ struct AudioPage: View {
                         Spacer()
                         Text(profileSummary(profile)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Button(L("audioSettings.apply")) { AudioProfileApplier.apply(profile) }
-                        Button(role: .destructive) { runtime.config.audio.profiles.removeAll { $0.id == profile.id } } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) { endEditing(); runtime.config.audio.profiles.removeAll { $0.id == profile.id } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless)
                     }
                 }
@@ -125,7 +125,7 @@ struct AudioPage: View {
     private func profileSummary(_ profile: AudioProfile) -> String {
         var parts: [String] = []
         if let uid = profile.outputDeviceUID { parts.append(AudioDeviceManager.shared.outputDevices.first { $0.uid == uid }?.name ?? uid) }
-        if let volume = profile.outputVolume { parts.append("\(Int(volume * 100))%") }
+        if let volume = profile.outputVolume { parts.append("\((volume * 100).safeInt)%") }
         if let mix = profile.appSettings, !mix.isEmpty { parts.append(L("audioSettings.appsInMix", mix.count)) }
         return parts.joined(separator: " · ")
     }
@@ -206,7 +206,7 @@ struct SystemPage: View {
                 }
                 ForEach($runtime.config.system.deviceProfiles) { $profile in
                     DeviceProfileEditor(profile: $profile) {
-                        runtime.config.system.deviceProfiles.removeAll { $0.id == profile.id }
+                        endEditing(); runtime.config.system.deviceProfiles.removeAll { $0.id == profile.id }
                     }
                 }
             } header: {
@@ -262,7 +262,7 @@ private struct PowerProfileEditor: View {
                     Spacer()
                     if !PowerProfile.builtIn.contains(where: { $0.id == profile.id }) {
                         Button(L("common.delete"), role: .destructive) {
-                            runtime.config.system.powerProfiles.removeAll { $0.id == profile.id }
+                            endEditing(); runtime.config.system.powerProfiles.removeAll { $0.id == profile.id }
                         }
                     }
                 }

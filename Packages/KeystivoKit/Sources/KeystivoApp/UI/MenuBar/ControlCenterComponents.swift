@@ -87,7 +87,8 @@ struct CCSlider: View {
     var onSymbol: (() -> Void)?
 
     private var fraction: CGFloat {
-        CGFloat((min(max(value, range.lowerBound), range.upperBound) - range.lowerBound) / (range.upperBound - range.lowerBound))
+        guard value.isFinite, range.upperBound > range.lowerBound else { return 0 }
+        return CGFloat((min(max(value, range.lowerBound), range.upperBound) - range.lowerBound) / (range.upperBound - range.lowerBound))
     }
 
     var body: some View {
@@ -116,7 +117,7 @@ struct CCSlider: View {
         .frame(height: height)
         .accessibilityElement()
         .accessibilityLabel(label)
-        .accessibilityValue("\(Int((fraction * 100).rounded()))%")
+        .accessibilityValue("\((fraction * 100).rounded().safeInt)%")
         .accessibilityAdjustableAction { direction in
             let step = (range.upperBound - range.lowerBound) / 16
             value = min(max(value + (direction == .increment ? step : -step), range.lowerBound), range.upperBound)

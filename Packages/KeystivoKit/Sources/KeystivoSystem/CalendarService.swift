@@ -48,6 +48,8 @@ public final class CalendarService {
         guard let end = calendar.date(byAdding: .day, value: days, to: start) else { return [] }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         return store.events(matching: predicate)
+            // Dates are implicitly unwrapped in EventKit; a malformed synced event can lack them.
+            .filter { ($0.startDate as Date?) != nil && ($0.endDate as Date?) != nil }
             .filter { $0.endDate > now && $0.status != .canceled }
             .sorted { ($0.isAllDay ? 0 : 1, $0.startDate) < ($1.isAllDay ? 0 : 1, $1.startDate) }
             .map(Self.event)

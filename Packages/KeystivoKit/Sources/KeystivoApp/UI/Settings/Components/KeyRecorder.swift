@@ -60,7 +60,9 @@ struct KeyRecorder: View {
         .popover(isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Text(message ?? "").padding(10).frame(maxWidth: 260)
         }
-        .onDisappear { stop() }
+        // Only the recorder that is recording may undo the suspension; others
+        // disappearing (scrolling, page changes) must not end someone else's capture.
+        .onDisappear { if isRecording { stop() } }
     }
 
     private func start() {

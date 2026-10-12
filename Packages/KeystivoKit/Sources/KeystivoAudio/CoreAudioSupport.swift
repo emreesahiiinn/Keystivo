@@ -57,9 +57,13 @@ nonisolated enum AudioProperty {
         var address = address
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(object, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
-        var values = [T](repeating: zero, count: Int(size) / MemoryLayout<T>.stride)
+        let count = Int(size) / MemoryLayout<T>.stride
+        guard count > 0 else { return [] }
+        var values = [T](repeating: zero, count: count)
+        // Ask for exactly what the buffer holds, never a partial element more.
+        size = UInt32(count * MemoryLayout<T>.stride)
         guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &values) == noErr else { return [] }
-        return values
+        return Array(values.prefix(Int(size) / MemoryLayout<T>.stride))
     }
 
     static func string(_ object: AudioObjectID, _ address: AudioObjectPropertyAddress) -> String? {

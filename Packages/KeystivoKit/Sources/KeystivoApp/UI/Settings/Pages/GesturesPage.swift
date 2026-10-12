@@ -22,8 +22,8 @@ struct GesturesPage: View {
                 if runtime.config.gestures.bindings.isEmpty {
                     Text(L("gestures.empty")).foregroundStyle(.secondary)
                 }
-                ForEach($runtime.config.gestures.bindings) { $binding in
-                    GestureSummaryRow(binding: $binding, deviceOn: deviceOn(binding.trigger)) { editing = binding.id } onDelete: {
+                ForEach(runtime.config.gestures.bindings) { binding in
+                    GestureSummaryRow(binding: safeElement($runtime.config.gestures.bindings, id: binding.id, fallback: binding), deviceOn: deviceOn(binding.trigger)) { editing = binding.id } onDelete: {
                         runtime.config.gestures.bindings.removeAll { $0.id == binding.id }
                     }
                 }
@@ -48,11 +48,13 @@ struct GesturesPage: View {
         }
         .formStyle(.grouped)
         .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
-            if let index = runtime.config.gestures.bindings.firstIndex(where: { $0.id == editing }) {
-                GestureEditorSheet(runtime: runtime, binding: $runtime.config.gestures.bindings[index]) {
-                    runtime.config.gestures.bindings.remove(at: index)
+            if let binding = runtime.config.gestures.bindings.first(where: { $0.id == editing }) {
+                GestureEditorSheet(runtime: runtime, binding: safeElement($runtime.config.gestures.bindings, id: binding.id, fallback: binding)) {
+                    endEditing()
                     editing = nil
+                    runtime.config.gestures.bindings.removeAll { $0.id == binding.id }
                 } onDone: {
+                    endEditing()
                     editing = nil
                 }
             }

@@ -105,7 +105,7 @@ extension BuiltinActions {
             try requireAccessibility()
             try WindowManager.shared.resizeFocused(axis: .horizontal, larger: true)
         }
-        register("windows.narrower", "arrow.right.and.left", .windows, keywords: ["width", "smaller", "shrink", "resize"]) { _, _ in
+        register("windows.narrower", "arrow.right.and.line.vertical.and.arrow.left", .windows, keywords: ["width", "smaller", "shrink", "resize"]) { _, _ in
             try requireAccessibility()
             try WindowManager.shared.resizeFocused(axis: .horizontal, larger: false)
         }
@@ -113,7 +113,7 @@ extension BuiltinActions {
             try requireAccessibility()
             try WindowManager.shared.resizeFocused(axis: .vertical, larger: true)
         }
-        register("windows.shorter", "arrow.down.and.up", .windows, keywords: ["height", "smaller", "shrink", "resize"]) { _, _ in
+        register("windows.shorter", "arrow.down.and.line.horizontal.and.arrow.up", .windows, keywords: ["height", "smaller", "shrink", "resize"]) { _, _ in
             try requireAccessibility()
             try WindowManager.shared.resizeFocused(axis: .vertical, larger: false)
         }

@@ -163,6 +163,18 @@ public enum ScriptRunner {
         try? await Task.sleep(for: .milliseconds(30))
         stdout.fileHandleForReading.readabilityHandler = nil
         stderr.fileHandleForReading.readabilityHandler = nil
+        if Task.isCancelled || process.isRunning {
+            // Cancelled (e.g. a workflow was stopped): the script was only asked to
+            // quit. `terminationStatus` of a running process raises an exception.
+            let pid = process.processIdentifier
+            if process.isRunning {
+                Task.detached {
+                    try? await Task.sleep(for: .seconds(1))
+                    if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+                }
+            }
+            throw CancellationError()
+        }
         if !timedOut.data.isEmpty { throw PluginError.timedOut }
         let output = String(data: out.data, encoding: .utf8) ?? ""
         let errors = String(data: err.data, encoding: .utf8) ?? ""

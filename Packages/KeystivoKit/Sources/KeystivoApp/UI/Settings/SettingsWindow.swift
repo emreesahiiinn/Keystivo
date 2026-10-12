@@ -243,7 +243,7 @@ struct SettingsRootView: View {
     }
 
     @ViewBuilder
-    private func page(for section: SettingsSection) -> some View {
+    func page(for section: SettingsSection) -> some View {
         switch section {
         case .general: GeneralPage(runtime: runtime)
         case .profiles: ProfilesPage(runtime: runtime)

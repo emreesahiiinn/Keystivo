@@ -157,7 +157,7 @@ public final class LayoutManager {
             for entry in entries.sorted(by: { $0.windowIndex < $1.windowIndex }) {
                 guard !available.isEmpty else { break }
                 let matchIndex = available.firstIndex { ($0.title ?? "") == entry.title && !entry.title.isEmpty }
-                    ?? (entry.windowIndex < available.count ? entry.windowIndex : 0)
+                    ?? (available.indices.contains(entry.windowIndex) ? entry.windowIndex : 0)
                 let window = available.remove(at: matchIndex)
                 let screen = screensByUUID[entry.displayUUID] ?? NSScreen.main
                 guard let screen else { continue }

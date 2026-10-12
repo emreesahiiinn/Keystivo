@@ -56,7 +56,7 @@ struct MouseKeyboardPage: View {
                             }
                             .labelsHidden().fixedSize()
                             Spacer()
-                            Button(role: .destructive) { runtime.config.input.mouseButtons.removeAll { $0.id == binding.id } } label: { Image(systemName: "trash") }
+                            Button(role: .destructive) { endEditing(); runtime.config.input.mouseButtons.removeAll { $0.id == binding.id } } label: { Image(systemName: "trash") }
                                 .buttonStyle(.borderless)
                         }
                         ActionChainEditor(actions: $binding.actions)
@@ -109,7 +109,7 @@ struct MouseKeyboardPage: View {
                             }
                         }
                         .labelsHidden()
-                        Button(role: .destructive) { runtime.config.input.remaps.removeAll { $0.id == remap.id } } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) { endEditing(); runtime.config.input.remaps.removeAll { $0.id == remap.id } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless)
                     }
                 }
@@ -679,7 +679,7 @@ struct FilesPage: View {
                             runtime.hud.show(symbol: "eye", text: L("files.previewResult", matches.count))
                         }
                         Button(L("shortcuts.edit")) { editing = rule }
-                        Button(role: .destructive) { runtime.config.files.folderRules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) { endEditing(); runtime.config.files.folderRules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless)
                     }
                 }
@@ -757,11 +757,11 @@ private struct FolderRuleEditor: View {
                         Text(L("automation.matchAny")).tag(false)
                     }
                     .pickerStyle(.segmented).fixedSize()
-                    ForEach(rule.conditions.indices, id: \.self) { index in
+                    ForEach(Array(rule.conditions.enumerated()), id: \.offset) { index, condition in
                         HStack {
-                            ConditionEditor(condition: $rule.conditions[index])
+                            ConditionEditor(condition: safeElement($rule.conditions, index, fallback: condition))
                             Spacer()
-                            Button { rule.conditions.remove(at: index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                            Button { endEditing(); rule.conditions.removeIfPresent(at: index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                         }
                     }
                     Menu(L("automation.addCondition")) {
@@ -775,11 +775,11 @@ private struct FolderRuleEditor: View {
                     .fixedSize()
                 }
                 Section(L("files.then")) {
-                    ForEach(rule.actions.indices, id: \.self) { index in
+                    ForEach(Array(rule.actions.enumerated()), id: \.offset) { index, action in
                         HStack {
-                            FileActionEditor(action: $rule.actions[index])
+                            FileActionEditor(action: safeElement($rule.actions, index, fallback: action))
                             Spacer()
-                            Button { rule.actions.remove(at: index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                            Button { endEditing(); rule.actions.removeIfPresent(at: index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                         }
                     }
                     Menu(L("automation.addStep")) {
@@ -918,7 +918,7 @@ struct LinksPage: View {
                             ForEach(browsers) { browser in Text(browser.name).tag(browser.bundleID) }
                         }
                         .labelsHidden().frame(width: 150)
-                        Button(role: .destructive) { runtime.config.links.rules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) { endEditing(); runtime.config.links.rules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless)
                     }
                 }

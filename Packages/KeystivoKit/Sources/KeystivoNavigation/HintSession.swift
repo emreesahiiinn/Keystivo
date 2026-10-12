@@ -153,7 +153,7 @@ public enum ScrollActuator {
     }
 
     public static func scroll(_ direction: Direction, in area: NavigableElement, step: Int32 = 60) {
-        let page = Int32(area.frame.height * 0.8)
+        let page = Int32(clamping: (area.frame.height * 0.8).safeInt)
         let (dx, dy): (Int32, Int32) = switch direction {
         case .up: (0, step)
         case .down: (0, -step)

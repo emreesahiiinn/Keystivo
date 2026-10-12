@@ -50,7 +50,14 @@ final class ConfigurationStore {
         }
         do {
             let data = try Data(contentsOf: store.url)
-            configuration = try Self.decodeTolerantly(data)
+            let (loaded, repaired) = try Self.decodeRepairing(data)
+            configuration = loaded
+            if repaired {
+                // Some settings were damaged and fell back to defaults; keep the original for reference.
+                let backup = store.url.deletingPathExtension().appendingPathExtension("damaged-\(Int(Date.now.timeIntervalSince1970)).json")
+                try? FileManager.default.copyItem(at: store.url, to: backup)
+                DiagnosticsCenter.shared.record(.warning, module: "Configuration", L("config.error.repaired", backup.lastPathComponent))
+            }
         } catch {
             let backup = store.url.deletingPathExtension().appendingPathExtension("corrupt-\(Int(Date.now.timeIntervalSince1970)).json")
             try? FileManager.default.copyItem(at: store.url, to: backup)
@@ -62,11 +69,49 @@ final class ConfigurationStore {
     /// Decodes after deep-merging onto the defaults, so keys added in newer
     /// versions (or removed by hand-editing) fall back to default values.
     static func decodeTolerantly(_ data: Data) throws -> KeystivoConfiguration {
+        try decodeRepairing(data).configuration
+    }
+
+    /// Like ``decodeTolerantly(_:)``, but a damaged part (a wrong type, a broken
+    /// list) no longer costs every other setting: each top-level section, and
+    /// then each setting inside a damaged section, is kept when it still decodes.
+    static func decodeRepairing(_ data: Data) throws -> (configuration: KeystivoConfiguration, repaired: Bool) {
         let defaults = try JSONSerialization.jsonObject(with: JSONFileStore<KeystivoConfiguration>.encoder.encode(KeystivoConfiguration()))
         let loaded = try JSONSerialization.jsonObject(with: data)
-        let merged = deepMerge(defaults, loaded)
-        let mergedData = try JSONSerialization.data(withJSONObject: merged)
-        return try JSONFileStore<KeystivoConfiguration>.decoder.decode(KeystivoConfiguration.self, from: mergedData)
+        if let configuration = try? decode(deepMerge(defaults, loaded)) {
+            return (configuration, false)
+        }
+        guard let defaultsRoot = defaults as? [String: Any], let loadedRoot = loaded as? [String: Any] else {
+            throw CocoaError(.coderReadCorrupt)
+        }
+        var kept = defaultsRoot
+        for (key, value) in loadedRoot.sorted(by: { $0.key < $1.key }) {
+            var attempt = kept
+            attempt[key] = defaultsRoot[key].map { deepMerge($0, value) } ?? value
+            if (try? decode(attempt)) != nil {
+                kept = attempt
+                continue
+            }
+            // Keep the good settings of a damaged section.
+            guard var section = defaultsRoot[key] as? [String: Any], let loadedSection = value as? [String: Any] else { continue }
+            for (child, childValue) in loadedSection.sorted(by: { $0.key < $1.key }) {
+                var trialSection = section
+                trialSection[child] = section[child].map { deepMerge($0, childValue) } ?? childValue
+                var trial = kept
+                trial[key] = trialSection
+                if (try? decode(trial)) != nil { section = trialSection }
+            }
+            kept[key] = section
+        }
+        return (try decode(kept), true)
+    }
+
+    private static func decode(_ object: Any) throws -> KeystivoConfiguration {
+        // `data(withJSONObject:)` raises an Objective-C exception (a crash, not
+        // a Swift error) for anything that isn't a JSON container.
+        guard JSONSerialization.isValidJSONObject(object) else { throw CocoaError(.coderReadCorrupt) }
+        let data = try JSONSerialization.data(withJSONObject: object)
+        return try JSONFileStore<KeystivoConfiguration>.decoder.decode(KeystivoConfiguration.self, from: data)
     }
 
     static func deepMerge(_ base: Any, _ overlay: Any) -> Any {
@@ -78,11 +123,22 @@ final class ConfigurationStore {
         return result
     }
 
+    #if DEBUG
+    /// Developer tests change settings in memory only.
+    @ObservationIgnored var suspendsSaving = false
+    #endif
+
     func scheduleSave() {
+        #if DEBUG
+        if suspendsSaving { return }
+        #endif
         saveDebouncer.schedule { [weak self] in self?.saveNow() }
     }
 
     func saveNow() {
+        #if DEBUG
+        if suspendsSaving { return }
+        #endif
         do {
             try store.save(configuration)
         } catch {
@@ -113,7 +169,7 @@ final class ConfigurationStore {
     func previewImport(_ data: Data) throws -> ExportFile {
         let object = try JSONSerialization.jsonObject(with: data)
         guard let dict = object as? [String: Any], (dict["format"] as? String) == "com.keystivo.configuration",
-              let configObject = dict["configuration"] else {
+              let configObject = dict["configuration"], JSONSerialization.isValidJSONObject(configObject) else {
             throw ActionError.failed(L("config.error.importFormat"))
         }
         let configData = try JSONSerialization.data(withJSONObject: configObject)

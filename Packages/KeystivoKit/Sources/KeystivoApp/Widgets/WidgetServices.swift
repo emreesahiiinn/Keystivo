@@ -22,7 +22,9 @@ final class WeatherService {
         var isDay: Bool
         var high: Double
         var low: Double
-        var hours: [(date: Date, temperature: Double, code: Int)]
+        var hours: [(date: Date, temperature: Double, code: Int, isDay: Bool)]
+        /// The place's own time zone: forecast hours are shown in local time there.
+        var timeZone: TimeZone
         var fetchedAt: Date
     }
 
@@ -78,7 +80,7 @@ final class WeatherService {
             URLQueryItem(name: "latitude", value: String(place.latitude)),
             URLQueryItem(name: "longitude", value: String(place.longitude)),
             URLQueryItem(name: "current", value: "temperature_2m,weather_code,is_day"),
-            URLQueryItem(name: "hourly", value: "temperature_2m,weather_code"),
+            URLQueryItem(name: "hourly", value: "temperature_2m,weather_code,is_day"),
             URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min"),
             URLQueryItem(name: "timezone", value: "auto"),
             URLQueryItem(name: "forecast_days", value: "2"),
@@ -96,16 +98,20 @@ final class WeatherService {
         let times = (hourly?["time"] as? [Double]) ?? []
         let temperatures = (hourly?["temperature_2m"] as? [Double]) ?? []
         let codes = (hourly?["weather_code"] as? [Int]) ?? []
+        let days = (hourly?["is_day"] as? [Int]) ?? []
         let now = Date.now.timeIntervalSince1970 - 3600
-        let hours = zip(times, zip(temperatures, codes))
-            .filter { $0.0 >= now }
+        let count = min(times.count, temperatures.count, codes.count)
+        let hours = (0..<count)
+            .filter { times[$0] >= now }
             .prefix(6)
-            .map { (date: Date(timeIntervalSince1970: $0.0), temperature: $0.1.0, code: $0.1.1) }
+            .map { (date: Date(timeIntervalSince1970: times[$0]), temperature: temperatures[$0], code: codes[$0], isDay: days.indices.contains($0) ? days[$0] == 1 : true) }
+        let zone = (json["timezone"] as? String).flatMap(TimeZone.init(identifier:))
+            ?? (json["utc_offset_seconds"] as? Int).flatMap(TimeZone.init(secondsFromGMT:)) ?? .current
         return Report(
             temperature: temperature, code: code, isDay: (current["is_day"] as? Int ?? 1) == 1,
             high: (daily?["temperature_2m_max"] as? [Double])?.first ?? temperature,
             low: (daily?["temperature_2m_min"] as? [Double])?.first ?? temperature,
-            hours: Array(hours), fetchedAt: .now
+            hours: Array(hours), timeZone: zone, fetchedAt: .now
         )
     }
 

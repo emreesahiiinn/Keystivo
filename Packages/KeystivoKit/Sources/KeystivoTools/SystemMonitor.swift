@@ -192,8 +192,10 @@ public final class SystemMonitor {
         let now = Date.now
         if let previous = previousNetwork {
             let seconds = max(now.timeIntervalSince(previous.date), 0.001)
-            next.networkDown = Double(network.down &- previous.down) / seconds
-            next.networkUp = Double(network.up &- previous.up) / seconds
+            // The per-interface counters are 32-bit and wrap every 4 GiB, and an
+            // adapter going away lowers the sum: never treat a drop as traffic.
+            next.networkDown = network.down >= previous.down ? Double(network.down - previous.down) / seconds : 0
+            next.networkUp = network.up >= previous.up ? Double(network.up - previous.up) / seconds : 0
         }
         previousNetwork = (network.down, network.up, now)
         if disk == nil || now.timeIntervalSince(disk!.date) > 30,
@@ -290,6 +292,7 @@ public final class SystemMonitor {
 
     /// "1.2 MB/s" style formatting.
     nonisolated public static func rate(_ bytesPerSecond: Double) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .binary) + "/s"
+        let bytes = bytesPerSecond.isFinite ? Int64(min(max(bytesPerSecond, 0), 1e15)) : 0
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary) + "/s"
     }
 }

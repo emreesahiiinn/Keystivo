@@ -320,7 +320,8 @@ struct ControlCenterView: View {
                 dismiss()
                 runtime.launcher.show(mode: .clipboard)
             }
-            CCRow(symbol: "gearshape", title: L("cc.settings"), shortcut: KeyCombo(kVK_ANSI_Comma, .command)) {
+            // Marketing images show the US-layout key; everyone else sees their own layout's.
+            CCRow(symbol: "gearshape", title: L("cc.settings"), shortcut: Theme.isShowcase ? nil : KeyCombo(kVK_ANSI_Comma, .command), shortcutText: "⌘,") {
                 dismiss()
                 runtime.windowsUI.showSettingsAtLastSection()
             }
@@ -438,7 +439,7 @@ private struct AppVolumeRow: View {
                         .symbolEffect(.variableColor.iterative, isActive: true)
                 }
                 Spacer(minLength: 4)
-                Text(setting.muted ? L("mixer.muted") : "\(Int(setting.volume * 100))%")
+                Text(setting.muted ? L("mixer.muted") : "\((setting.volume * 100).safeInt)%")
                     .font(.system(size: 10.5).monospacedDigit())
                     .foregroundStyle(.secondary)
                 Menu {

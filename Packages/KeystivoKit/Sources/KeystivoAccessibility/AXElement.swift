@@ -113,15 +113,11 @@ nonisolated public struct AXElement: Hashable, @unchecked Sendable {
 
     /// Top-left-origin position in global screen coordinates.
     public var position: CGPoint? {
-        guard let value: AXValue = attribute(kAXPositionAttribute) else { return nil }
-        var point = CGPoint.zero
-        return AXValueGetValue(value, .cgPoint, &point) ? point : nil
+        AXValues.point(attribute(kAXPositionAttribute) as CFTypeRef?)
     }
 
     public var size: CGSize? {
-        guard let value: AXValue = attribute(kAXSizeAttribute) else { return nil }
-        var size = CGSize.zero
-        return AXValueGetValue(value, .cgSize, &size) ? size : nil
+        AXValues.size(attribute(kAXSizeAttribute) as CFTypeRef?)
     }
 
     /// Frame in AX coordinates (top-left origin of the primary display).
@@ -214,5 +210,27 @@ nonisolated public extension AXElement {
     @MainActor func focus() {
         guard let pid else { return }
         WindowFocus.focus(window: self, pid: pid)
+    }
+}
+
+/// Reads points and sizes from Accessibility values. Apps return whatever they
+/// like for an attribute; a non-AXValue passed to `AXValueGetValue` would crash,
+/// so the type is checked first (CF casts with `as!`/`as?` aren't).
+nonisolated public enum AXValues {
+    public static func point(_ value: CFTypeRef?) -> CGPoint? {
+        guard let value = axValue(value) else { return nil }
+        var point = CGPoint.zero
+        return AXValueGetValue(value, .cgPoint, &point) ? point : nil
+    }
+
+    public static func size(_ value: CFTypeRef?) -> CGSize? {
+        guard let value = axValue(value) else { return nil }
+        var size = CGSize.zero
+        return AXValueGetValue(value, .cgSize, &size) ? size : nil
+    }
+
+    private static func axValue(_ value: CFTypeRef?) -> AXValue? {
+        guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        return unsafeDowncast(value, to: AXValue.self)
     }
 }

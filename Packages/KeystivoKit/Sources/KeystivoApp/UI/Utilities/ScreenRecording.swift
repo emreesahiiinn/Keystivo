@@ -18,7 +18,10 @@ final class AreaSelector {
     private var continuation: CheckedContinuation<Selection?, Never>?
 
     func select() async -> Selection? {
-        await withCheckedContinuation { continuation in
+        // No display (e.g. lid closed, no monitor): nothing to select, and the
+        // continuation below would otherwise never resume.
+        guard !NSScreen.screens.isEmpty else { return nil }
+        return await withCheckedContinuation { continuation in
             self.continuation = continuation
             for screen in NSScreen.screens {
                 let window = SelectionWindow(screen: screen)

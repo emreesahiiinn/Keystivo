@@ -57,10 +57,11 @@ nonisolated public enum EmojiCatalog {
         }
         func rank(_ pair: (EmojiEntry, FuzzyMatch?)) -> Double {
             let score = pair.1?.score ?? 0
-            guard let index = popular.firstIndex(of: pair.0.glyph), hasWord(pair.0.name) || hasWord(pair.0.englishName) else { return score }
+            guard let index = popularIndex[pair.0.glyph], hasWord(pair.0.name) || hasWord(pair.0.englishName) else { return score }
             return best * 1.5 - Double(index) * 0.001 * best
         }
-        return matches.sorted { rank($0) > rank($1) }
+        // Rank each match once: short queries ("a") match thousands of entries.
+        return matches.map { ($0, rank($0)) }.sorted { $0.1 > $1.1 }.map(\.0)
     }
 
     /// Most used emoji, most popular first.
@@ -70,6 +71,8 @@ nonisolated public enum EmojiCatalog {
         "💙", "💚", "💛", "🧡", "💜", "🖤", "🤍", "💔", "⭐", "🌟", "☀️", "🌙", "⚡", "🎂", "🎁", "🍀", "🌹", "☕", "🍕", "🚀",
         "💡", "📌", "📎", "📅", "⏰", "⚠️", "❌", "❗", "❓", "➕", "👋", "✌️", "🤞", "👎", "🫶", "🤦", "🤷", "💀", "🥳", "😋",
     ]
+
+    static let popularIndex: [String: Int] = Dictionary(popular.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
 
     // MARK: Loading
 

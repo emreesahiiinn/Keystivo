@@ -26,6 +26,9 @@ nonisolated public enum MenuItemCollector {
     /// All commands of `pid`'s menus except the Apple menu. Bounded so huge
     /// dynamic menus (history, bookmarks) can't stall the search.
     public static func items(pid: pid_t, limit: Int = 2500) -> [MenuItemEntry] {
+        // Requests to our own process are answered on the calling thread by AppKit,
+        // which must be the main thread.
+        guard pid != getpid() || Thread.isMainThread else { return [] }
         let app = AXElement.application(pid: pid)
         app.setMessagingTimeout(0.5)
         guard let menuBar = app.element(kAXMenuBarAttribute) else { return [] }

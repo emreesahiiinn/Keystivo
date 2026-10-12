@@ -20,6 +20,14 @@ struct ScreenSaverTests {
         #expect(SaverStyle.glass.supportsBackdrop)
     }
 
+    /// A clock set before 2001 gives negative reference-date intervals.
+    @Test func shuffleWorksBefore2001() {
+        for seconds: Double in [-1, -180, -1e9, -946_080_000] {
+            let date = Date(timeIntervalSinceReferenceDate: seconds)
+            #expect(SaverStyle.rotating.contains(SaverRootView.resolved(.shuffle, at: date)))
+        }
+    }
+
     @Test func artworkIgnoresSeeThroughBackdrop() {
         #expect(SaverRootView(style: .aurora, backdrop: .clear).backdrop == .design)
         #expect(SaverRootView(style: .flip, backdrop: .frosted).backdrop == .frosted)

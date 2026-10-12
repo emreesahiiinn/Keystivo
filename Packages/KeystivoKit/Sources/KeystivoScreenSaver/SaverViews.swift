@@ -48,8 +48,9 @@ public struct SaverRootView: View {
     static func resolved(_ style: SaverStyle, at date: Date, clocksOnly: Bool = false) -> SaverStyle {
         guard style == .shuffle else { return style }
         let pool = clocksOnly ? SaverStyle.rotating.filter(\.supportsBackdrop) : SaverStyle.rotating
-        let slot = Int(date.timeIntervalSinceReferenceDate / 180)
-        return pool[slot % pool.count]
+        // Clocks set before 2001 give negative slots: wrap them into range too.
+        let slot = Int((date.timeIntervalSinceReferenceDate / 180).rounded(.down).truncatingRemainder(dividingBy: 1_000_000))
+        return pool[((slot % pool.count) + pool.count) % pool.count]
     }
 }
 
@@ -282,7 +283,8 @@ private struct FluidTheme: View {
         let t = date.timeIntervalSinceReferenceDate
         // Each palette holds for ~2 minutes and blends into the next over 20 s.
         let cycle = t / 140
-        let index = Int(cycle) % Self.palettes.count
+        let count = Self.palettes.count
+        let index = ((Int(cycle.truncatingRemainder(dividingBy: 1_000_000)) % count) + count) % count
         let blend = min(1, max(0, (cycle - floor(cycle) - 0.86) / 0.14))
         let from = Self.palettes[index], to = Self.palettes[(index + 1) % Self.palettes.count]
         let colors = (0..<9).map { slot -> Color in

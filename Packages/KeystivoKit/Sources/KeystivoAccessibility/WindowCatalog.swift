@@ -105,7 +105,8 @@ public final class WindowCatalog {
 
         if options.includeOtherSpaces {
             let known = Set(all.map(\.id))
-            let pidsToApps = Dictionary(uniqueKeysWithValues: appInfo.map { ($0.pid, $0) })
+            // Apps still launching can share a pid (-1): never trap on duplicates.
+            let pidsToApps = Dictionary(appInfo.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
             for entry in serverWindows where !entry.isOnScreen && !known.contains(entry.id) {
                 guard let app = pidsToApps[entry.pid], !entry.title.isEmpty,
                       entry.bounds.width > 120, entry.bounds.height > 80 else { continue }
@@ -176,8 +177,8 @@ public final class WindowCatalog {
             guard let id = window.windowID else { continue }
             var position = CGPoint.zero
             var size = CGSize.zero
-            if let value = values[kAXPositionAttribute] { AXValueGetValue(value as! AXValue, .cgPoint, &position) }
-            if let value = values[kAXSizeAttribute] { AXValueGetValue(value as! AXValue, .cgSize, &size) }
+            if let point = AXValues.point(values[kAXPositionAttribute]) { position = point }
+            if let value = AXValues.size(values[kAXSizeAttribute]) { size = value }
             result.append(WindowInfo(
                 id: id, pid: app.pid, bundleID: app.bundleID, appName: app.name,
                 title: values[kAXTitleAttribute] as? String ?? "",

@@ -191,6 +191,7 @@ extension KeystivoRuntime {
     }
 
     func removeWidget(_ id: UUID) {
+        endEditing()
         config.widgets.instances.removeAll { $0.id == id }
         WidgetNotes.shared.remove(id)
     }

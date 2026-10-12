@@ -55,8 +55,10 @@ struct AutomationPage: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     Button {
-                        runtime.config.automation.workflows.removeAll { $0.id == selection }
+                        endEditing()
+                        let removed = selection
                         selection = nil
+                        runtime.config.automation.workflows.removeAll { $0.id == removed }
                     } label: { Image(systemName: "minus") }
                     .disabled(selection == nil)
                     Spacer()
@@ -73,8 +75,8 @@ struct AutomationPage: View {
             .frame(minWidth: 230, maxWidth: 300)
 
             Group {
-                if let index = runtime.config.automation.workflows.firstIndex(where: { $0.id == selection }) {
-                    WorkflowEditor(runtime: runtime, workflow: $runtime.config.automation.workflows[index])
+                if let workflow = runtime.config.automation.workflows.first(where: { $0.id == selection }) {
+                    WorkflowEditor(runtime: runtime, workflow: safeElement($runtime.config.automation.workflows, id: workflow.id, fallback: workflow))
                 } else {
                     Form {
                         PageHeader(symbol: "bolt.fill", color: .yellow, titleKey: "settings.page.automation", subtitleKey: "automation.subtitle")
@@ -148,11 +150,11 @@ struct WorkflowEditor: View {
                 }
             }
             Section(L("automation.triggers")) {
-                ForEach($workflow.triggers.indices, id: \.self) { index in
+                ForEach(Array(workflow.triggers.enumerated()), id: \.offset) { index, trigger in
                     HStack(alignment: .top) {
-                        TriggerEditor(trigger: safeElement($workflow.triggers, index))
+                        TriggerEditor(trigger: safeElement($workflow.triggers, index, fallback: trigger))
                         Spacer()
-                        Button { if workflow.triggers.indices.contains(index) { workflow.triggers.remove(at: index) } } label: { Image(systemName: "trash") }
+                        Button { endEditing(); workflow.triggers.removeIfPresent(at: index) } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless)
                     }
                 }
@@ -330,7 +332,7 @@ struct ConditionGroupEditor: View {
                 HStack {
                     ConditionRow(condition: Binding(get: { children.indices.contains(index) ? children[index] : fallback }, set: { replace(index, with: $0) }), runtime: runtime)
                     Spacer()
-                    Button { remove(index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                    Button { endEditing(); remove(index) } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                 }
             }
             Menu {
@@ -457,20 +459,20 @@ struct StepListEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(steps.indices, id: \.self) { index in
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                 HStack(alignment: .top, spacing: 8) {
-                    Toggle("", isOn: safeElement($steps, index).isEnabled).labelsHidden().toggleStyle(.checkbox)
-                    StepEditor(step: safeElement($steps, index), runtime: runtime, depth: depth)
+                    Toggle("", isOn: safeElement($steps, index, fallback: step).isEnabled).labelsHidden().toggleStyle(.checkbox)
+                    StepEditor(step: safeElement($steps, index, fallback: step), runtime: runtime, depth: depth)
                     Spacer(minLength: 0)
                     Menu {
-                        Button(L("automation.moveUp")) { if index > 0 { steps.swapAt(index, index - 1) } }
-                        Button(L("automation.moveDown")) { if index < steps.count - 1 { steps.swapAt(index, index + 1) } }
-                        Toggle(L("automation.continueOnError"), isOn: safeElement($steps, index).continueOnError)
-                        if case .action = steps[index].kind {
+                        Button(L("automation.moveUp")) { endEditing(); if index > 0, steps.indices.contains(index) { steps.swapAt(index, index - 1) } }
+                        Button(L("automation.moveDown")) { endEditing(); if index < steps.count - 1 { steps.swapAt(index, index + 1) } }
+                        Toggle(L("automation.continueOnError"), isOn: safeElement($steps, index, fallback: step).continueOnError)
+                        if case .action = step.kind {
                             Button(L("automation.saveOutput")) { outputEditIndex = index }
                         }
                         Divider()
-                        Button(L("common.delete"), role: .destructive) { if steps.indices.contains(index) { steps.remove(at: index) } }
+                        Button(L("common.delete"), role: .destructive) { endEditing(); steps.removeIfPresent(at: index) }
                     } label: { Image(systemName: "ellipsis.circle") }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
@@ -648,12 +650,3 @@ private struct RunHistorySheet: View {
     }
 }
 
-/// A binding to one array element that tolerates the element being removed
-/// while SwiftUI still renders its row (index bindings would crash).
-func safeElement<T>(_ array: Binding<[T]>, _ index: Int) -> Binding<T> {
-    let fallback = array.wrappedValue[index]
-    return Binding(
-        get: { array.wrappedValue.indices.contains(index) ? array.wrappedValue[index] : fallback },
-        set: { if array.wrappedValue.indices.contains(index) { array.wrappedValue[index] = $0 } }
-    )
-}

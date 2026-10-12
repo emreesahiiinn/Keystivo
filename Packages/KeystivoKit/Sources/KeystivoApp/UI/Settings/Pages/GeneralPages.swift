@@ -93,6 +93,8 @@ struct ProfilesPage: View {
                     } label: { Image(systemName: "plus") }
                     Button {
                         guard let selection, runtime.config.workspace.profiles.count > 1 else { return }
+                        endEditing()
+                        self.selection = nil
                         runtime.config.workspace.profiles.removeAll { $0.id == selection }
                         if runtime.config.workspace.activeProfileID == selection {
                             runtime.config.workspace.activeProfileID = runtime.config.workspace.profiles.first?.id
@@ -108,8 +110,8 @@ struct ProfilesPage: View {
             .frame(minWidth: 200, maxWidth: 260)
 
             Group {
-                if let index = runtime.config.workspace.profiles.firstIndex(where: { $0.id == selection }) {
-                    ProfileEditor(runtime: runtime, profile: $runtime.config.workspace.profiles[index])
+                if let profile = runtime.config.workspace.profiles.first(where: { $0.id == selection }) {
+                    ProfileEditor(runtime: runtime, profile: safeElement($runtime.config.workspace.profiles, id: profile.id, fallback: profile))
                 } else {
                     ContentUnavailableView(L("profiles.selectTitle"), systemImage: "person.2", description: Text(L("profiles.selectBody")))
                 }

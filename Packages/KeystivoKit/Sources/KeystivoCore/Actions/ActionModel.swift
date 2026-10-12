@@ -58,7 +58,7 @@ nonisolated public struct ActionArguments: Sendable {
 
     public func string(_ key: String) -> String? { values[key]?.stringValue }
     public func double(_ key: String) -> Double? { values[key]?.doubleValue }
-    public func int(_ key: String) -> Int? { values[key]?.doubleValue.map { Int($0) } }
+    public func int(_ key: String) -> Int? { values[key]?.doubleValue.map(\.safeInt) }
     public func bool(_ key: String) -> Bool? { values[key]?.boolValue }
     public func strings(_ key: String) -> [String] {
         if case .strings(let list) = values[key] { return list }

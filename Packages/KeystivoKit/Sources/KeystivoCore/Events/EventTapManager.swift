@@ -46,6 +46,8 @@ public final class EventTapManager {
     public static let syntheticEventMarker: Int64 = 0x4B53_5456
 
     public private(set) var isRunning = false
+    private var isDispatching = false
+    private var refreshPending = false
     private var reportedMissingPermission = false
 
     public init() {}
@@ -64,6 +66,12 @@ public final class EventTapManager {
 
     /// Recomputes the event mask; call when a handler's interests change.
     public func refresh() {
+        // A handler reacting to an event (e.g. the switcher closing) must not
+        // tear down and rebuild the tap from inside the tap's own callback.
+        if isDispatching {
+            refreshPending = true
+            return
+        }
         handlers.removeAll { $0.value == nil }
         var mask: CGEventMask = 0
         for handler in handlers.compactMap(\.value) {
@@ -131,6 +139,14 @@ public final class EventTapManager {
         }
         if event.getIntegerValueField(.eventSourceUserData) == Self.syntheticEventMarker {
             return true
+        }
+        isDispatching = true
+        defer {
+            isDispatching = false
+            if refreshPending {
+                refreshPending = false
+                DispatchQueue.main.async { MainActor.assumeIsolated { EventTapManager.shared.refresh() } }
+            }
         }
         for handler in handlers.compactMap(\.value) where handler.eventTapTypes.contains(type) {
             if handler.handleTapEvent(event, type: type) == .consume {

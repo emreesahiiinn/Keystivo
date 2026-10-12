@@ -45,10 +45,12 @@ public final class FocusController {
     public init() {}
 
     public func start(minutes: Int? = nil) {
+        // Minutes can come from workflows: at most a day (and no overflow below).
+        let minutes = minutes.map { min(max($0, 0), 1440) }
         if isActive { stop(notify: false) }
         isActive = true
         startedAt = .now
-        let duration = minutes ?? settings.defaultMinutes
+        let duration = min(max(minutes ?? settings.defaultMinutes, 0), 1440)
         if duration > 0 {
             endsAt = .now.addingTimeInterval(TimeInterval(duration * 60))
             timerTask = Task {

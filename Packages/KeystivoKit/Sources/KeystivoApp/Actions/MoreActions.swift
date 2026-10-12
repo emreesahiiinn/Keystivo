@@ -72,7 +72,7 @@ extension BuiltinActions {
             apps.adjustVolume(by: step(), for: bundleID)
             showAppVolume(bundleID, runtime: runtime)
         }
-        register("audio.frontAppVolumeDown", "speaker.wave.1.circle", .audio, keywords: ["app volume"]) { _, _ in
+        register("audio.frontAppVolumeDown", "speaker.minus", .audio, keywords: ["app volume"]) { _, _ in
             guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return }
             apps.adjustVolume(by: -step(), for: bundleID)
             showAppVolume(bundleID, runtime: runtime)
@@ -309,7 +309,8 @@ extension BuiltinActions {
         register("system.delay", "hourglass", .automation, parameters: [
             ParameterSpec("seconds", "param.seconds", .number(min: 0, max: 60, step: 0.5), default: .number(1)),
         ], launcher: false) { arguments, _ in
-            try await Task.sleep(for: .milliseconds(Int((arguments.double("seconds") ?? 1) * 1000)))
+            let seconds = min(max((arguments.double("seconds") ?? 1).finite(or: 1), 0), 3600)
+            try await Task.sleep(for: .milliseconds((seconds * 1000).safeInt))
         }
         register("system.typeText", "keyboard", .automation, parameters: [
             ParameterSpec("text", "param.text", .multilineText),
@@ -385,7 +386,8 @@ extension BuiltinActions {
             let wanted = try arguments.require("path").split(whereSeparator: { $0 == ">" || $0 == "›" })
                 .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
             let pid = app.processIdentifier
-            let entries = await Task.detached { MenuItemCollector.items(pid: pid) }.value
+            // Our own menus must be read on the main thread (AppKit answers in-process requests on the caller's thread).
+            let entries = pid == getpid() ? MenuItemCollector.items(pid: pid) : await Task.detached { MenuItemCollector.items(pid: pid) }.value
             // Full path ("File > Export > PDF"), or just the item title when unique.
             let match = entries.first { ($0.path + [$0.title]).map { $0.lowercased() } == wanted }
                 ?? entries.first { wanted.count == 1 && $0.title.lowercased() == wanted[0] }

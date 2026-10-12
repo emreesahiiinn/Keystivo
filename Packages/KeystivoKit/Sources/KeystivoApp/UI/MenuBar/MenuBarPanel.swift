@@ -20,6 +20,15 @@ struct PanelSurface: ViewModifier {
 
     @ViewBuilder
     private var backdrop: some View {
+        if Theme.isShowcase {
+            Color.clear
+        } else {
+            material
+        }
+    }
+
+    @ViewBuilder
+    private var material: some View {
         switch background {
         case .glass:
             VisualEffectBackground(material: .hudWindow)

@@ -219,7 +219,9 @@ final class ChargeLimiter {
             connection.resume()
             self.connection = connection
         }
-        return connection?.remoteObjectProxyWithErrorHandler { error in
+        // XPC calls this on its own queue: `@Sendable` keeps Swift 6 from
+        // treating it as main-actor code (a runtime trap off the main thread).
+        return connection?.remoteObjectProxyWithErrorHandler { @Sendable error in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     DiagnosticsCenter.shared.record(.warning, module: "Battery", L("battery.error.helper"), detail: error.localizedDescription)

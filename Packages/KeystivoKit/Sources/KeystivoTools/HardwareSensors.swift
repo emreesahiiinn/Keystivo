@@ -71,7 +71,7 @@ nonisolated public final class HardwareSensors: @unchecked Sendable {
     public func fans() -> [FanReading] {
         guard let smc, let count = smc.read("FNum")?.first, count > 0 else { return [] }
         return (0..<Int(count)).compactMap { index in
-            guard let rpm = value("F\(index)Ac") else { return nil }
+            guard let rpm = value("F\(index)Ac"), rpm.isFinite, rpm >= 0, rpm < 100_000 else { return nil }
             return FanReading(id: index, rpm: rpm, minRPM: value("F\(index)Mn"), maxRPM: value("F\(index)Mx"))
         }
     }

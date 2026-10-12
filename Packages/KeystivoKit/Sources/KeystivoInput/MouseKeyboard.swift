@@ -97,8 +97,8 @@ public final class ScrollEngine: EventTapHandler {
         if abs(pending.dx) < 1 { dx = pending.dx }
         pending.dx -= dx
         pending.dy -= dy
-        let x = Int32(dx.rounded())
-        let y = Int32(dy.rounded())
+        let x = Int32(clamping: dx.rounded().safeInt)
+        let y = Int32(clamping: dy.rounded().safeInt)
         if x != 0 || y != 0 {
             let source = CGEventSource(stateID: .hidSystemState)
             source?.userData = EventTapManager.syntheticEventMarker
@@ -288,6 +288,26 @@ public enum KeyRemapper {
             try? await run(["property", "--matching", matchingJSON(vendorID: device[0], productID: device[1]), "--set", mappingJSON([])])
         }
         mappedDevices = []
+    }
+
+    /// For quitting: clears every mapping right away, blocking briefly. (An async
+    /// reset can't run while the main thread waits for it.)
+    nonisolated public static func resetNow() {
+        runNow(["property", "--set", mappingJSON([])])
+        for device in mappedDevices {
+            runNow(["property", "--matching", matchingJSON(vendorID: device[0], productID: device[1]), "--set", mappingJSON([])])
+        }
+        mappedDevices = []
+    }
+
+    nonisolated private static func runNow(_ arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/hidutil")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return }
+        process.waitUntilExit()
     }
 
     private static func run(_ arguments: [String]) async throws {

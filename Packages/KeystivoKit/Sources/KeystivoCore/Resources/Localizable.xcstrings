@@ -42505,6 +42505,83 @@
         }
       }
     },
+    "config.error.repaired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einige Einstellungen waren beschädigt und wurden zurückgesetzt; der Rest blieb erhalten. Die Originaldatei wurde als %@ gesichert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some settings were damaged and were reset to their defaults; the rest were kept. The original file was saved as %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Algunos ajustes estaban dañados y se restablecieron; el resto se conservó. El archivo original se guardó como %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certains réglages étaient endommagés et ont été réinitialisés ; les autres ont été conservés. Le fichier d’origine a été enregistré sous %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alcune impostazioni erano danneggiate e sono state ripristinate; le altre sono state mantenute. Il file originale è stato salvato come %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一部の設定が破損していたためデフォルトに戻しました。ほかの設定はそのままです。元のファイルは%@として保存しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일부 설정이 손상되어 기본값으로 재설정되었으며 나머지는 유지되었습니다. 원본 파일은 %@(으)로 저장되었습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alguns ajustes estavam danificados e foram redefinidos; os demais foram mantidos. O arquivo original foi salvo como %@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Некоторые настройки были повреждены и сброшены; остальные сохранены. Исходный файл сохранён как %@."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bazı ayarlar bozuktu ve varsayılanlarına döndü; diğerleri korundu. Özgün dosya %@ olarak saklandı."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分设置已损坏并恢复为默认值；其余设置已保留。原始文件已存为 %@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分設定已損毀並重置為預設值；其餘設定已保留。原始檔案已儲存為 %@。"
+          }
+        }
+      }
+    },
     "config.error.save" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -126,6 +126,8 @@ public final class KeepAwakeController {
     public init() {}
 
     public func set(_ mode: KeepAwakeMode, duration: TimeInterval? = nil) {
+        // Durations can come from workflows: keep them finite, at most a week.
+        let duration = duration.map { min(max($0.finite(or: 0), 0), 7 * 86_400) }
         release()
         self.mode = mode
         guard mode != .off else { return }

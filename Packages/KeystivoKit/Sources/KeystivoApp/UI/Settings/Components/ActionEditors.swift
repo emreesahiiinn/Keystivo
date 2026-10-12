@@ -49,13 +49,13 @@ struct ActionChainEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(actions.enumerated()), id: \.element.id) { index, _ in
+            ForEach(Array(actions.enumerated()), id: \.element.id) { index, invocation in
                 HStack(alignment: .top, spacing: 8) {
                     Text("\(index + 1)")
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 18, height: 22)
-                    ActionInvocationEditor(invocation: $actions[index])
+                    ActionInvocationEditor(invocation: safeElement($actions, id: invocation.id, fallback: invocation))
                     Spacer(minLength: 0)
                     VStack(spacing: 2) {
                         Button { move(index, by: -1) } label: { Image(systemName: "chevron.up") }
@@ -66,7 +66,8 @@ struct ActionChainEditor: View {
                     .buttonStyle(.borderless)
                     .font(.caption)
                     Button {
-                        actions.remove(at: index)
+                        endEditing()
+                        actions.removeAll { $0.id == invocation.id }
                     } label: {
                         Image(systemName: "trash").foregroundStyle(.secondary)
                     }
@@ -85,7 +86,8 @@ struct ActionChainEditor: View {
 
     private func move(_ index: Int, by delta: Int) {
         let target = index + delta
-        guard actions.indices.contains(target) else { return }
+        guard actions.indices.contains(index), actions.indices.contains(target) else { return }
+        endEditing()
         actions.swapAt(index, target)
     }
 }
@@ -188,6 +190,8 @@ struct ParameterField: View {
     }
 
     private func Calculator_format(_ number: Double) -> String {
-        number.rounded() == number ? String(Int(number)) : String(format: "%.1f", number)
+        // Values come from settings files too: never convert huge or infinite numbers to Int.
+        guard number.isFinite, abs(number) < 1e15 else { return number.formatted() }
+        return number.rounded() == number ? String(Int(number)) : String(format: "%.1f", number)
     }
 }

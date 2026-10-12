@@ -212,13 +212,14 @@ public final class AudioDeviceManager {
 
     private func volume(of device: AudioObjectID, scope: AudioObjectPropertyScope) -> Float? {
         let virtual = AudioProperty.address(kAudioHardwareServiceDeviceProperty_VirtualMainVolume, scope: scope)
+        // Drivers (virtual devices especially) can report anything; keep it a sane 0…1.
         if AudioProperty.has(device, virtual), let value = try? AudioProperty.get(device, virtual, default: Float32(0)) {
-            return value
+            return min(max(value.finite(or: 0), 0), 1)
         }
         for element in [kAudioObjectPropertyElementMain, 1, 2] {
             let address = AudioProperty.address(kAudioDevicePropertyVolumeScalar, scope: scope, element: element)
             if AudioProperty.has(device, address), let value = try? AudioProperty.get(device, address, default: Float32(0)) {
-                return value
+                return min(max(value.finite(or: 0), 0), 1)
             }
         }
         return nil

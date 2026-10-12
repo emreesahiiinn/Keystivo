@@ -290,8 +290,8 @@ private struct MonthGrid: View {
 
     var body: some View {
         let calendar = Calendar.current
-        let month = calendar.dateInterval(of: .month, for: date)!
-        let firstWeekday = calendar.component(.weekday, from: month.start)
+        let monthStart = calendar.dateInterval(of: .month, for: date)?.start ?? date
+        let firstWeekday = calendar.component(.weekday, from: monthStart)
         let leading = (firstWeekday - calendar.firstWeekday + 7) % 7
         let days = calendar.range(of: .day, in: .month, for: date)?.count ?? 30
         let today = calendar.component(.day, from: date)
@@ -714,9 +714,9 @@ private struct WeatherWidget: View {
         HStack(alignment: .center, spacing: 0) {
             ForEach(Array(report.hours.prefix(count).enumerated()), id: \.offset) { _, hour in
                 VStack(spacing: 8) {
-                    Text(hour.date.formatted(Date.FormatStyle(locale: WidgetFormat.locale).hour()))
+                    Text(hour.date.formatted(Date.FormatStyle(locale: WidgetFormat.locale, timeZone: report.timeZone).hour()))
                         .font(.system(size: 11, weight: .medium)).opacity(0.85)
-                    Image(systemName: WeatherService.symbol(hour.code))
+                    Image(systemName: WeatherService.symbol(hour.code, isDay: hour.isDay))
                         .symbolRenderingMode(.multicolor)
                         .font(.system(size: 16))
                         .frame(height: 20)

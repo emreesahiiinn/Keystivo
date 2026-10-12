@@ -47,7 +47,7 @@ struct HintsOverlayView: View {
 
     private var labelsOverlay: some View {
         ForEach(indicesOnScreen, id: \.self) { index in
-            if model.visible.contains(index) {
+            if model.visible.contains(index), model.labels.indices.contains(index) {
                 HintLabel(text: model.labels[index], typedCount: model.typed.count, style: model.style, fontSize: model.fontSize)
                     .position(labelPosition(for: model.elements[index].frame))
             }
@@ -68,9 +68,9 @@ struct HintsOverlayView: View {
 
     private var searchOverlay: some View {
         ZStack(alignment: .topLeading) {
-            ForEach(Array(model.searchResults.prefix(40).enumerated()), id: \.element) { position, index in
-                let frame = model.elements[index].frame
-                if screenFrame.intersects(frame) {
+            ForEach(Array(model.searchResults.prefix(40).enumerated()), id: \.offset) { position, index in
+                let frame = model.elements.indices.contains(index) ? model.elements[index].frame : .null
+                if !frame.isNull, screenFrame.intersects(frame) {
                     RoundedRectangle(cornerRadius: 5)
                         .strokeBorder(position == model.searchSelection ? Color.accentColor : Color.yellow.opacity(0.8), lineWidth: position == model.searchSelection ? 3 : 1.5)
                         .background(RoundedRectangle(cornerRadius: 5).fill((position == model.searchSelection ? Color.accentColor : Color.yellow).opacity(0.15)))
@@ -93,7 +93,7 @@ struct HintsOverlayView: View {
                         .strokeBorder(Color.accentColor.opacity(isSelected ? 0.9 : 0.5), style: StrokeStyle(lineWidth: isSelected ? 3 : 2, dash: isSelected ? [] : [6, 4]))
                         .frame(width: frame.width, height: frame.height)
                         .position(x: frame.midX - screenFrame.minX, y: frame.midY - screenFrame.minY)
-                    if model.scrollSelection == nil {
+                    if model.scrollSelection == nil, model.labels.indices.contains(index) {
                         HintLabel(text: model.labels[index], typedCount: model.typed.count, style: model.style, fontSize: model.fontSize + 4)
                             .position(x: frame.midX - screenFrame.minX, y: frame.midY - screenFrame.minY)
                     }

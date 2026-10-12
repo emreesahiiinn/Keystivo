@@ -135,7 +135,10 @@ final class SwitcherController: EventTapHandler {
         EventTapManager.shared.add(self)
     }
 
-    var isVisible: Bool { panel?.isVisible == true }
+    /// Between present and close; false during the closing fade, so keys typed
+    /// right after releasing ⌘ reach the app instead of the fading panel.
+    private var isPresented = false
+    var isVisible: Bool { isPresented && panel?.isVisible == true }
 
     func settingsChanged() {
         model.thumbnailWidth = runtime.config.switcher.thumbnailWidth
@@ -215,6 +218,7 @@ final class SwitcherController: EventTapHandler {
         resizePanel()
         panel.center(on: NSScreen.underMouse)
         model.openToken += 1
+        isPresented = true
         panel.presentAnimated(makeKey: false, rise: 0)
     }
 
@@ -249,6 +253,7 @@ final class SwitcherController: EventTapHandler {
     }
 
     func close() {
+        isPresented = false
         panel?.dismissAnimated()
         holdModifiers = []
         EventTapManager.shared.refresh()

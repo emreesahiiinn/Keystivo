@@ -96,6 +96,31 @@ nonisolated struct WidgetInstance: Codable, Hashable, Identifiable, Sendable {
     // Timer
     var timerMinutes = 25
 
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, size, placement, origin, showsSeconds, timeZones, city, latitude, longitude, actions, title, targetDate, timerMinutes
+    }
+
+    /// Missing options (e.g. ones added in a later version) take their defaults,
+    /// so an older settings file never loses its widgets.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(WidgetKind.self, forKey: .kind)
+        size = (try? container.decodeIfPresent(WidgetSize.self, forKey: .size)) ?? kind.defaultSize
+        let defaults = WidgetInstance(kind: kind, size: size)
+        id = (try? container.decodeIfPresent(UUID.self, forKey: .id)) ?? UUID()
+        placement = (try? container.decodeIfPresent(WidgetPlacement.self, forKey: .placement)) ?? .desktop
+        origin = (try? container.decodeIfPresent(CGPoint.self, forKey: .origin)) ?? nil
+        showsSeconds = (try? container.decodeIfPresent(Bool.self, forKey: .showsSeconds)) ?? defaults.showsSeconds
+        timeZones = (try? container.decodeIfPresent([String].self, forKey: .timeZones)) ?? defaults.timeZones
+        city = (try? container.decodeIfPresent(String.self, forKey: .city)) ?? defaults.city
+        latitude = (try? container.decodeIfPresent(Double.self, forKey: .latitude)) ?? nil
+        longitude = (try? container.decodeIfPresent(Double.self, forKey: .longitude)) ?? nil
+        actions = (try? container.decodeIfPresent([String].self, forKey: .actions)) ?? defaults.actions
+        title = (try? container.decodeIfPresent(String.self, forKey: .title)) ?? defaults.title
+        targetDate = (try? container.decodeIfPresent(Date.self, forKey: .targetDate)) ?? defaults.targetDate
+        timerMinutes = (try? container.decodeIfPresent(Int.self, forKey: .timerMinutes)) ?? defaults.timerMinutes
+    }
+
     init(kind: WidgetKind, size: WidgetSize? = nil, placement: WidgetPlacement = .desktop) {
         self.kind = kind
         self.size = size ?? kind.defaultSize

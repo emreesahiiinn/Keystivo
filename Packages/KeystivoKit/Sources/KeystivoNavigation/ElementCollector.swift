@@ -111,11 +111,7 @@ public enum ElementCollector {
         if (values["AXHidden"] as? Bool) == true { return }
 
         var frame: CGRect?
-        if let positionValue = values[kAXPositionAttribute], let sizeValue = values[kAXSizeAttribute] {
-            var point = CGPoint.zero
-            var size = CGSize.zero
-            AXValueGetValue(positionValue as! AXValue, .cgPoint, &point)
-            AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        if let point = AXValues.point(values[kAXPositionAttribute]), let size = AXValues.size(values[kAXSizeAttribute]) {
             frame = CGRect(origin: point, size: size)
         }
 

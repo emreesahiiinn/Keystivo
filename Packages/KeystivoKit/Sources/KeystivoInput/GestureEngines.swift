@@ -7,10 +7,21 @@ import Observation
 /// trackpad and a Magic Mouse used together don't corrupt each other's gestures.
 nonisolated final class MultitouchState: @unchecked Sendable {
     private var recognizers: [UInt: TrackpadRecognizer] = [:]
+    private var isActive = false
     private let lock = NSLock()
+
+    /// Starting or stopping only flips this flag: the state object itself lives
+    /// forever, because callbacks on the framework's thread may still be running.
+    func setActive(_ active: Bool) {
+        lock.withLock {
+            isActive = active
+            recognizers.removeAll()
+        }
+    }
 
     func process(_ points: [TouchPoint], device: UInt, timestamp: Double, allowTwoFinger: Bool) -> [TrackpadRecognizer.Event] {
         lock.withLock {
+            guard isActive else { return [] }
             var recognizer = recognizers[device] ?? TrackpadRecognizer()
             let events = recognizer.process(points, timestamp: timestamp, allowTwoFingerSwipes: allowTwoFinger)
             recognizers[device] = recognizer
@@ -19,8 +30,9 @@ nonisolated final class MultitouchState: @unchecked Sendable {
     }
 }
 
-/// The multitouch C callback has no context pointer, so the live state is global.
-nonisolated(unsafe) private var multitouchState: MultitouchState?
+/// The multitouch C callback has no context pointer, so the state is global.
+/// It is never replaced or freed (a callback may be reading it at any moment).
+nonisolated private let multitouchState = MultitouchState()
 
 /// Receives raw trackpad contacts from the MultitouchSupport framework and
 /// recognizes custom gestures. Devices are only started while at least one
@@ -37,6 +49,9 @@ public final class TrackpadGestureEngine {
 
     @ObservationIgnored private var devices: [KSMTDeviceRef] = []
     @ObservationIgnored private var deviceList: CFMutableArray?
+    /// Lists of stopped devices, kept alive a while: the framework may still be
+    /// inside a callback for one of them right after it is stopped.
+    @ObservationIgnored private var retiredDeviceLists: [CFMutableArray] = []
 
     public init() {
         isAvailable = KSMTLoad()
@@ -58,8 +73,7 @@ public final class TrackpadGestureEngine {
         let list = unmanaged.takeRetainedValue()
         // Keep the list (and therefore its devices) alive while running.
         deviceList = list
-        let state = MultitouchState()
-        multitouchState = state
+        multitouchState.setActive(true)
         let count = CFArrayGetCount(list)
         for index in 0..<count {
             guard let pointer = CFArrayGetValueAtIndex(list, index) else { continue }
@@ -78,8 +92,9 @@ public final class TrackpadGestureEngine {
             KSMTStop(device)
         }
         devices.removeAll()
+        multitouchState.setActive(false)
+        if let deviceList { retiredDeviceLists = Array((retiredDeviceLists + [deviceList]).suffix(4)) }
         deviceList = nil
-        multitouchState = nil
         isRunning = false
     }
 
@@ -102,9 +117,9 @@ public final class TrackpadGestureEngine {
 
 /// C-convention callback invoked ~100×/s on a private thread.
 nonisolated private func multitouchCallback(_ device: KSMTDeviceRef?, _ touches: UnsafePointer<KSMTTouch>?, _ count: Int32, _ timestamp: Double, _ frame: Int32) -> Int32 {
-    guard let state = multitouchState else { return 0 }
+    let state = multitouchState
     var points: [TouchPoint] = []
-    if let touches {
+    if let touches, count > 0 {
         points.reserveCapacity(Int(count))
         for index in 0..<Int(count) {
             let touch = touches[index]

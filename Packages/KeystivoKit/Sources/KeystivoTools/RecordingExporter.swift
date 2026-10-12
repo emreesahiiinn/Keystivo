@@ -36,7 +36,7 @@ nonisolated public enum RecordingExporter {
     static func makeGIF(from movie: URL, to output: URL, frameRate: Int, maxWidth: CGFloat) async throws {
         let asset = AVURLAsset(url: movie)
         let duration = try await asset.load(.duration).seconds
-        guard duration > 0 else { throw Failure.noFrames }
+        guard duration.isFinite, duration > 0 else { throw Failure.noFrames }
         let fps = Double(max(1, min(frameRate, 30)))
         let count = max(1, Int(duration * fps))
         let generator = AVAssetImageGenerator(asset: asset)

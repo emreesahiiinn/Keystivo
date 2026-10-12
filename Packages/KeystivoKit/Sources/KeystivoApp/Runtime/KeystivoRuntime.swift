@@ -173,6 +173,22 @@ public final class KeystivoRuntime {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.launcher.show(mode: .root) }
         }
         #if DEBUG
+        // `-KSShowcase /dir`: README images from the real views, with sample data.
+        if let output = UserDefaults.standard.string(forKey: "KSShowcase") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                await Showcase.run(runtime: self, output: URL(fileURLWithPath: output))
+            }
+        }
+        // `-KSSmokeTest /path/log.txt`: every surface in turn; settings stay untouched.
+        if let output = UserDefaults.standard.string(forKey: "KSSmokeTest") {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                await SmokeTest.run(runtime: self, output: URL(fileURLWithPath: output))
+            }
+        }
         // `-KSDemoWidgets YES`: one of each widget on screen, in memory only (settings untouched).
         if UserDefaults.standard.bool(forKey: "KSDemoWidgets") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -383,12 +399,8 @@ public final class KeystivoRuntime {
         chargeLimiter.shutdown()
         DisplayManager.shared.restoreAll()
         if appliedKeyRemaps {
-            let semaphore = DispatchSemaphore(value: 0)
-            Task.detached {
-                await KeyRemapper.reset()
-                semaphore.signal()
-            }
-            _ = semaphore.wait(timeout: .now() + 1.5)
+            // Caps Lock (Hyper) and other remaps must not outlive Keystivo.
+            KeyRemapper.resetNow()
         }
         AppAudioController.shared.shutdown()
         FocusController.shared.stop(notify: false)

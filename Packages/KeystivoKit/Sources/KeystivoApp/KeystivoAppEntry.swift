@@ -18,6 +18,9 @@ import SwiftUI
 /// Application delegate used by the thin app target.
 public final class KeystivoAppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        // Writing to a pipe whose reader quit (a script, `shortcuts`) must fail
+        // with an error, not kill Keystivo with SIGPIPE.
+        signal(SIGPIPE, SIG_IGN)
         #if !DEBUG
         // Development builds run from DerivedData on purpose.
         if ApplicationMover.offerMoveIfNeeded() { return }

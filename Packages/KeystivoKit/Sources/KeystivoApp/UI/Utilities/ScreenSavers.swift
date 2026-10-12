@@ -275,7 +275,7 @@ final class ScreenSaverManager {
         guard !preview.isShowing else { return }
         let anyInput = CGEventType(rawValue: ~0)!
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
-        guard idle >= Double(saverSettings.idleMinutes * 60), !Self.displaySleepIsPrevented(), !Self.isScreenLocked() else { return }
+        guard idle >= Double(saverSettings.idleMinutes) * 60, !Self.displaySleepIsPrevented(), !Self.isScreenLocked() else { return }
         startKeystivoSaver()
     }
 

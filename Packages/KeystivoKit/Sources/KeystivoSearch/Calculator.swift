@@ -13,7 +13,11 @@ nonisolated public enum Calculator {
     }
 
     public static func evaluate(_ input: String) throws(Failure) -> Double {
-        var parser = Parser(tokens: try tokenize(input))
+        let tokens = try tokenize(input)
+        // The parser recurses per nesting level: no real calculation is this long,
+        // and pasted junk ("((((…" thousands deep) must not overflow the stack.
+        guard tokens.count <= 400 else { throw .invalid }
+        var parser = Parser(tokens: tokens)
         let value = try parser.parseExpression()
         guard parser.isAtEnd else { throw .invalid }
         guard value.isFinite else { throw .divisionByZero }

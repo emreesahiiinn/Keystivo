@@ -192,8 +192,14 @@ public enum SystemCommandRunner {
         }
         try process.run()
         if let stdin, let input {
-            stdin.fileHandleForWriting.write(Data(input.utf8))
-            try? stdin.fileHandleForWriting.close()
+            // Off the main thread (a full pipe would block it), with the throwing
+            // API (the old one raises an exception when the reader is gone).
+            let handle = stdin.fileHandleForWriting
+            let data = Data(input.utf8)
+            Task.detached {
+                try? handle.write(contentsOf: data)
+                try? handle.close()
+            }
         }
         let watchdog = Task.detached {
             try await Task.sleep(for: timeout)

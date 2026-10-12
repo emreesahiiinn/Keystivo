@@ -187,7 +187,7 @@ struct WindowsPage: View {
                 Text(L("focusFollows.footer")).font(.caption).foregroundStyle(.secondary)
             }
             Section(L("windowsSettings.behavior")) {
-                LabeledContent(L("windowsSettings.gap", Int(runtime.config.windows.gap))) {
+                LabeledContent(L("windowsSettings.gap", runtime.config.windows.gap.safeInt)) {
                     Slider(value: $runtime.config.windows.gap, in: 0...40, step: 2).frame(width: 220)
                 }
                 Toggle(L("windowsSettings.cycle"), isOn: $runtime.config.windows.cyclesOnRepeat)
@@ -233,7 +233,7 @@ struct WindowsPage: View {
                 }
                 ForEach($runtime.config.windows.layouts) { $layout in
                     LayoutRow(layout: $layout) {
-                        runtime.config.windows.layouts.removeAll { $0.id == layout.id }
+                        endEditing(); runtime.config.windows.layouts.removeAll { $0.id == layout.id }
                     }
                 }
             } header: {
@@ -243,7 +243,7 @@ struct WindowsPage: View {
             }
             Section {
                 ForEach($runtime.config.windows.rules) { $rule in
-                    RuleRow(rule: $rule) { runtime.config.windows.rules.removeAll { $0.id == rule.id } }
+                    RuleRow(rule: $rule) { endEditing(); runtime.config.windows.rules.removeAll { $0.id == rule.id } }
                 }
                 HStack {
                     Button(L("windowsSettings.addRule")) { addingRule = true }
@@ -392,7 +392,9 @@ struct WorkspacesPage: View {
                 HStack {
                     if focus.isActive {
                         Label(L("workspaces.focusActive"), systemImage: "moon.fill").foregroundStyle(.indigo)
-                        if let endsAt = focus.endsAt {
+                        // The session can outlive its end by a moment (timer leeway, clock changes):
+                        // `now...endsAt` must never be a reversed range.
+                        if let endsAt = focus.endsAt, endsAt > .now {
                             Text(timerInterval: Date.now...endsAt, countsDown: true).monospacedDigit()
                         }
                         Spacer()
@@ -434,7 +436,7 @@ struct WorkspacesPage: View {
                                 ActionRegistry.shared.run(ActionInvocation("apps.group.launch", arguments: ["group": .string(group.id.uuidString)]), source: .menuBar)
                             }
                             Button(role: .destructive) {
-                                runtime.config.workspace.appGroups.removeAll { $0.id == group.id }
+                                endEditing(); runtime.config.workspace.appGroups.removeAll { $0.id == group.id }
                             } label: { Image(systemName: "trash") }
                             .buttonStyle(.borderless)
                         }
