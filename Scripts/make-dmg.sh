@@ -10,6 +10,10 @@
 # Later runs reuse that template and don't need Finder at all.
 #
 # Usage: Scripts/make-dmg.sh [--relayout]   (--relayout regenerates the template)
+#
+# CI: KEYSTIVO_VERSION / KEYSTIVO_BUILD override the version (e.g. from a git tag).
+# Without Config/Local.xcconfig the app is signed ad hoc, with a designated
+# requirement on the bundle identifier, so macOS keeps permissions across updates.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,8 +32,11 @@ RELAYOUT=0
 step() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 
 step "Building Release"
+VERSION_SETTINGS=()
+[ -n "${KEYSTIVO_VERSION:-}" ] && VERSION_SETTINGS+=("MARKETING_VERSION=$KEYSTIVO_VERSION")
+[ -n "${KEYSTIVO_BUILD:-}" ] && VERSION_SETTINGS+=("CURRENT_PROJECT_VERSION=$KEYSTIVO_BUILD")
 xcodebuild -project "$ROOT/Keystivo.xcodeproj" -scheme Keystivo -configuration Release \
-    -derivedDataPath "$DERIVED" clean build 2>&1 | grep -E "error:|warning: .*Keystivo|BUILD" || true
+    -derivedDataPath "$DERIVED" ${VERSION_SETTINGS[@]+"${VERSION_SETTINGS[@]}"} clean build 2>&1 | grep -E "error:|warning: .*Keystivo|BUILD" || true
 [ -d "$APP" ] || { echo "✗ Build failed: $APP not found"; exit 1; }
 
 step "Verifying signature"
