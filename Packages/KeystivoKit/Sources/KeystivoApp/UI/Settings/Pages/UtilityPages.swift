@@ -201,7 +201,8 @@ private struct MonitorWidgetRow: View {
 
     var body: some View {
         let monitor = SystemMonitor.shared
-        let reading = MonitorReading.make(metric, snapshot: monitor.snapshot, monitor: monitor, diskValue: runtime.config.menuBar.diskValue)
+        let reading = MonitorReading.make(metric, snapshot: monitor.snapshot, monitor: monitor, diskValue: runtime.config.menuBar.diskValue,
+                                           cpuTemperature: runtime.config.menuBar.cpuShowsTemperature)
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Toggle(L(metric.titleKey), isOn: isOn).toggleStyle(.checkbox)
@@ -237,6 +238,12 @@ private struct MonitorWidgetRow: View {
                 }
                 .controlSize(.small)
                 .padding(.leading, 20)
+                if metric == .cpu {
+                    Toggle(L("monitor.showCpuTemperature"), isOn: $runtime.config.menuBar.cpuShowsTemperature)
+                        .toggleStyle(.checkbox)
+                        .controlSize(.small)
+                        .padding(.leading, 20)
+                }
                 if metric == .disk {
                     HStack(spacing: 6) {
                         Text(L("monitor.diskShows")).foregroundStyle(.secondary)
@@ -253,7 +260,9 @@ private struct MonitorWidgetRow: View {
             }
         }
         .padding(.vertical, 2)
-        .onAppear { if metric.usesHardware { SystemMonitor.shared.samplesHardware = true } }
+        .onAppear {
+            if metric.usesHardware || (metric == .cpu && runtime.config.menuBar.cpuShowsTemperature) { SystemMonitor.shared.samplesHardware = true }
+        }
     }
 }
 

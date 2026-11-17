@@ -20,14 +20,21 @@ struct MonitorReading {
     var widestValue: String = "100%"
     var widestLines: [String] = ["100%"]
 
-    static func make(_ metric: MonitorMetric, snapshot: SystemSnapshot, monitor: SystemMonitor, diskValue: DiskValueMode) -> MonitorReading {
+    static func make(_ metric: MonitorMetric, snapshot: SystemSnapshot, monitor: SystemMonitor, diskValue: DiskValueMode, cpuTemperature: Bool = false) -> MonitorReading {
         let percent = { (value: Double) in "\(Int((value * 100).rounded()))%" }
         let bytes = { (value: Int64) in ByteCountFormatter.string(fromByteCount: value, countStyle: .file) }
         let memory = { (value: UInt64) in ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .memory) }
         switch metric {
         case .cpu:
-            return MonitorReading(symbol: "cpu", caption: L("monitor.short.cpu"), fraction: snapshot.cpuUsage, value: percent(snapshot.cpuUsage),
-                                  lines: (percent(snapshot.cpuUsage), ""), history: monitor.cpuHistory, perCore: snapshot.perCoreUsage)
+            guard cpuTemperature else {
+                return MonitorReading(symbol: "cpu", caption: L("monitor.short.cpu"), fraction: snapshot.cpuUsage, value: percent(snapshot.cpuUsage),
+                                      lines: (percent(snapshot.cpuUsage), ""), history: monitor.cpuHistory, perCore: snapshot.perCoreUsage)
+            }
+            let degrees = snapshot.cpuTemperature.map { "\(Int($0.rounded()))°" } ?? "—"
+            return MonitorReading(symbol: "cpu", caption: L("monitor.short.cpu"), fraction: snapshot.cpuUsage,
+                                  value: percent(snapshot.cpuUsage) + " " + degrees,
+                                  lines: (percent(snapshot.cpuUsage), degrees), history: monitor.cpuHistory, perCore: snapshot.perCoreUsage,
+                                  widestValue: "100% 100°", widestLines: ["100%", "100°"])
         case .memory:
             return MonitorReading(symbol: "memorychip", caption: L("monitor.short.memory"), fraction: snapshot.memoryPressure, value: percent(snapshot.memoryPressure),
                                   lines: (memory(snapshot.memoryUsed), memory(snapshot.memoryTotal)), history: monitor.memoryHistory,

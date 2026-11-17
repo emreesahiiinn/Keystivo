@@ -227,6 +227,8 @@ nonisolated struct MenuBarSettings: Codable, Hashable, Sendable {
     var monitorWidgets: [String: MonitorWidgetSettings] = [:]
     /// What the disk metric shows.
     var diskValue: DiskValueMode = .freeSpace
+    /// Show the processor temperature next to the CPU load.
+    var cpuShowsTemperature = true
     /// What the Keystivo menu bar panel shows, and how.
     var controlCenter = ControlCenterSettings()
     /// A separate menu bar item with the sound mixer (per-app volume).

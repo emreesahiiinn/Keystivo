@@ -106,10 +106,11 @@ final class SystemMonitorStatusItem: NSObject {
 
     func apply(_ settings: MenuBarSettings) {
         let wanted = settings.showsMonitor ? settings.monitorMetrics : []
+        // GPU and sensors are only read while shown (CPU temperature included).
+        SystemMonitor.shared.samplesHardware = wanted.contains(where: \.usesHardware)
+            || (settings.cpuShowsTemperature && wanted.contains(.cpu))
         guard wanted != metrics || (item == nil) != wanted.isEmpty else { return }
         metrics = wanted
-        // GPU and sensors are only read while shown.
-        SystemMonitor.shared.samplesHardware = wanted.contains(where: \.usesHardware)
         if wanted.isEmpty { uninstall() } else { install() }
     }
 
@@ -236,7 +237,7 @@ private struct MonitorSegmentView: View {
         // Reading the settings here keeps the widget live while they're edited.
         let menuBar = KeystivoRuntime.shared.config.menuBar
         let monitor = SystemMonitor.shared
-        MonitorWidget(reading: .make(metric, snapshot: monitor.snapshot, monitor: monitor, diskValue: menuBar.diskValue),
+        MonitorWidget(reading: .make(metric, snapshot: monitor.snapshot, monitor: monitor, diskValue: menuBar.diskValue, cpuTemperature: menuBar.cpuShowsTemperature),
                       settings: menuBar.widget(for: metric))
             .fixedSize()
             .frame(maxHeight: .infinity)
